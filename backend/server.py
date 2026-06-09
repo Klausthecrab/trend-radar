@@ -3,11 +3,13 @@
 
 import json
 import os
+import threading
 import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from database import get_db, init_db, seed_dummy_data, DB_PATH
+from pipeline import process_url
 
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
@@ -142,10 +144,22 @@ class Handler(SimpleHTTPRequestHandler):
                     (source_type, url, title)
                 )
                 db.commit()
-                entry_id = db.execute("SELECT id FROM entries WHERE url = ?", (url,)).fetchone()
+                entry_row = db.execute("SELECT id, source_type FROM entries WHERE url = ?", (url,)).fetchone()
                 db.close()
-                if entry_id:
-                    self._send_json({"id": entry_id["id"], "message": "Eintrag erstellt"}, 201)
+                if entry_row:
+                    entry_id = entry_row["id"]
+                    source_type = entry_row["source_type"]
+
+                    # Trigger pipeline in background for supported types
+                    is_youtube = "youtube" in url or "youtu.be" in url
+                    if source_type == "youtube" or is_youtube:
+                        threading.Thread(
+                            target=_process_entry_background,
+                            args=(entry_id, url, source_type, title),
+                            daemon=True
+                        ).start()
+
+                    self._send_json({"id": entry_id, "message": "Eintrag erstellt"}, 201)
                 else:
                     self._send_json({"message": "Eintrag existiert bereits"}, 200)
             except Exception as e:
@@ -219,6 +233,37 @@ class Handler(SimpleHTTPRequestHandler):
 
     def log_message(self, format, *args):
         print(f"[{time.strftime('%H:%M:%S')}] {args[0]} {args[1]} {args[2]}")
+
+
+def _process_entry_background(entry_id: int, url: str, source_type: str, title: str):
+    """Background worker: run pipeline, update entry with transcript + analysis."""
+    print(f"🧵 Starte Pipeline für Entry #{entry_id}: {url[:60]}...")
+    result = process_url(url, source_type, title)
+
+    if result.get("status") == "error":
+        print(f"⚠️  Pipeline fehlgeschlagen für #{entry_id}: {result.get('error')}")
+        return
+
+    transcript = result.get("transcript")
+    analysis = result.get("analysis")
+
+    if not transcript and not analysis:
+        return  # nothing to update
+
+    db = get_db()
+    try:
+        if transcript:
+            db.execute("UPDATE entries SET content = ? WHERE id = ?",
+                       (transcript, entry_id))
+        if analysis:
+            db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
+                       (json.dumps(analysis), entry_id))
+        db.commit()
+        print(f"✅ Pipeline abgeschlossen für Entry #{entry_id}")
+    except Exception as e:
+        print(f"❌ Pipeline-Update fehlgeschlagen für #{entry_id}: {e}")
+    finally:
+        db.close()
 
 
 def main():
