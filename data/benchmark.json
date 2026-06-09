@@ -1,0 +1,13 @@
+{
+  "video_url": "https://www.youtube.com/watch?v=Zsz0QnNyAjk",
+  "video_title": "What I Actually Run in My Homelab \u2013 2026 Self-Hosted Stack",
+  "video_duration_sec": 567,
+  "total_pipeline_sec": 25.6,
+  "steps": {
+    "1\ufe0f\u20e3 yt-dlp Download": 6.283321142196655,
+    "2\ufe0f\u20e3 ffmpeg Normalisierung": 1.7716052532196045,
+    "3\ufe0f\u20e3 Venice STT Transkription": 9.04513931274414,
+    "4\ufe0f\u20e3 LLM Analyse": 8.459080696105957
+  },
+  "transcript_length": 10436
+}
