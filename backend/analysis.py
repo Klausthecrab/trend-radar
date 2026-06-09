@@ -3,7 +3,6 @@
 
 import json
 import os
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -13,15 +12,22 @@ ROOT = HERE.parent
 VENICE_API = "https://api.venice.ai/api/v1/chat/completions"
 VENICE_KEY = os.environ.get("AUXILIARY_VISION_API_KEY", "")
 OBSIDIAN_VAULT = Path.home() / "obsidian-vaults" / "osb"
-TREND_DIR = OBSIDIAN_VAULT / "testzentrum"
+RES_DIR = OBSIDIAN_VAULT / "07 - _ressources" / "trend-radar"
 
-MODEL = "deepseek-v4-flash"  # via Venice Chat API
+MODEL = "deepseek-v4-flash"
+
+SOURCE_PREFIXES = {
+    "youtube": "yt",
+    "reddit": "rd",
+    "rss": "rss",
+    "web": "web",
+}
 
 
 def analyze_with_llm(title: str, content: str, source_type: str) -> dict:
     """Send title + content to Venice Chat API for structured analysis.
 
-    Returns: {relevance, summary, takeaways, action_items, obsidian_note}
+    Returns: {relevance, summary, topics: [{name, what_is, homelab_value, hermi_value}]}
     """
     prompt = f"""Du analysierst Tech-Inhalte für ein Homelab-Setup (Linux-Server, Docker, Self-Hosting, KI-Tools).
 
@@ -35,26 +41,23 @@ Analysiere den Inhalt und antworte NUR mit einem JSON-Objekt, keinem anderen Tex
 {{
   "relevance": <1-5>,
   "summary": "<1-3 Sätze Zusammenfassung auf Deutsch>",
-  "takeaways": [
-    "<Takeaway 1>",
-    "<Takeaway 2>"
-  ],
-  "action_items": [
-    "<Konkrete Handlungsoption für Homelab>",
-    "<Weitere Option>"
+  "topics": [
+    {{
+      "name": "<Name der Technologie / des Themas>",
+      "what_is": "<Erklärung: Was ist das? Wofür wird es genutzt?>",
+      "homelab_value": "<Mehrwert für das Homelab auf Butler — warum relevant, worauf achten>",
+      "hermi_value": "<Mehrwert für Hermi/KI-Systeme — was können wir damit machen?>"
+    }}
   ]
 }}
 
-Relevanz-Skala:
-1 = Nicht relevant für Homelab
-2 = Randnotiz, interessant aber kein Handlungsbedarf
-3 = Interessant, könnte relevant werden
-4 = Relevant, sollte man sich anschauen
-5 = Sehr relevant, sofort testen/umsetzen
+Regeln:
+- relevance: 1=nicht relevant, 2=Randnotiz, 3=interessant, 4=sollte man anschauen, 5=sofort testen
+- topics: max 3 Themen aus dem Inhalt
+- Jedes Thema hat eine Erklärung WAS es ist, WOFÜR es im Homelab gut ist und WAS Hermi/KI damit anfangen kann
+- Keine ToDo-Listen, keine Checkboxen, keine Handlungsaufforderungen
+- Nur Erklärung und Bewertung"""
 
-Takeaways = max 3 Kernaussagen aus dem Inhalt.
-Action Items = max 2 konkrete nächste Schritte für das Homelab auf Butler."""
-    
     if not VENICE_KEY:
         print("⚠️  Kein Venice API-Key — LLM-Analyse deaktiviert")
         return None
@@ -66,7 +69,7 @@ Action Items = max 2 konkrete nächste Schritte für das Homelab auf Butler."""
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.3,
-        "max_tokens": 1024,
+        "max_tokens": 2048,
     }
 
     try:
@@ -87,14 +90,13 @@ Action Items = max 2 konkrete nächste Schritte für das Homelab auf Butler."""
         result = resp.json()
         raw = result["choices"][0]["message"]["content"]
 
-        # Try to extract JSON from response (handle markdown code fences)
         if "```json" in raw:
             raw = raw.split("```json")[1].split("```")[0].strip()
         elif "```" in raw:
             raw = raw.split("```")[1].split("```")[0].strip()
 
         analysis = json.loads(raw)
-        print(f"✅ LLM-Analyse: Relevanz {analysis.get('relevance', '?')}/5")
+        print(f"✅ LLM-Analyse: Relevanz {analysis.get('relevance', '?')}/5, {len(analysis.get('topics', []))} Themen")
         return analysis
 
     except json.JSONDecodeError as e:
@@ -107,63 +109,72 @@ Action Items = max 2 konkrete nächste Schritte für das Homelab auf Butler."""
 
 
 def generate_obsidian_note(entry: dict, analysis: dict) -> str | None:
-    """Generate an Obsidian markdown note and write it to the vault.
+    """Generate an Obsidian note with neutral explanations (no checkboxes).
+
+    Filename format: yt: Titel / rd: Titel / rss: Titel
+    Content: topics with what_is, homelab_value, hermi_value.
 
     Returns the relative path within the vault.
     """
     title = entry.get("title", "Unbekannter Eintrag")
     url = entry.get("url", "")
     source_type = entry.get("source_type", "web")
-    timestamp = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
 
-    # Create safe filename
-    safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)[:60]
-    filename = f"{timestamp} - {safe_title}.md"
-    filepath = TREND_DIR / filename
+    # Build prefixed title
+    prefix = SOURCE_PREFIXES.get(source_type, "web")
+    display_title = f"{prefix}: {title}"
+    safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in display_title)[:70]
 
-    relevance_stars = "⭐" * analysis.get("relevance", 1)
-    takeaways = analysis.get("takeaways", [])
-    action_items = analysis.get("action_items", [])
+    # Clean unsafe chars from filename
+    safe_title = safe_title.replace(":", "_").replace("/", "_")
+    filename = f"{today} - {safe_title}.md"
+    filepath = RES_DIR / filename
+
+    relevance = analysis.get("relevance", 1)
+    relevance_stars = "⭐" * relevance
     summary = analysis.get("summary", "")
+    topics = analysis.get("topics", [])
 
-    # Count existing entries for the number
-    existing = list(TREND_DIR.glob("*.md"))
-    entry_num = len(existing) + 1
-
+    # Build content
     content = f"""---
-title: {title}
+title: {display_title}
 source: {source_type}
 url: {url}
-relevance: {analysis.get("relevance", 0)}/5
-created: {timestamp}
+relevance: {relevance}/5
+created: {today}
 tags: [trend-radar, {source_type}]
 ---
 
-# {title}
+# {display_title}
 
 **Quelle:** [{url}]({url})
-**Relevanz:** {relevance_stars} ({analysis.get("relevance", 0)}/5)
-**Datum:** {timestamp}
+**Relevanz:** {relevance_stars} ({relevance}/5)
+**Datum:** {today}
 
 ## Zusammenfassung
 
 {summary}
 
-## Takeaways
+## Analyse
 
 """
 
-    for t in takeaways:
-        content += f"- {t}\n"
+    for t in topics:
+        content += f"""### {t.get('name', 'Thema')}
 
-    content += "\n## Handlungsoptionen\n\n"
-    for a in action_items:
-        content += f"- [ ] {a}\n"
+**Was ist das?** {t.get('what_is', '—')}
 
-    content += f"\n---\n*Automatisch erstellt von Trend-Radar (Entry #{entry.get('id', '?')})*\n"
+**Mehrwert für Homelab:** {t.get('homelab_value', '—')}
+
+**Mehrwert für Hermi/KI:** {t.get('hermi_value', '—')}
+
+"""
+
+    content += "---\n*Automatisch erstellt von Trend-Radar*\n"
 
     try:
-        TREND_DIR.mkdir(parents=True, exist_ok=True)
+        RES_DIR.mkdir(parents=True, exist_ok=True)
         filepath.write_text(content, encoding="utf-8")
         rel_path = str(filepath.relative_to(OBSIDIAN_VAULT))
         print(f"✅ Obsidian-Note: {rel_path}")

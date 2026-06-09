@@ -415,8 +415,8 @@ async function loadEntries() {
     container.innerHTML = entries.map(e => {
       const analysis = e.analysis || {};
       const relevance = analysis.relevance ? '⭐'.repeat(analysis.relevance) : '';
-      const tookaways = analysis.takeaways && analysis.takeaways.length
-        ? analysis.takeaways.slice(0, 2).join(' · ')
+      const topics = analysis.topics && analysis.topics.length
+        ? analysis.topics.slice(0, 2).map(t => t.name).join(' · ')
         : '';
 
       return `<div class="entry-card">
@@ -427,7 +427,7 @@ async function loadEntries() {
         </div>
         <div class="title" onclick="window.open('${e.url}', '_blank')">${e.title || 'Kein Titel'}</div>
         <div class="summary">${e.content ? e.content.slice(0, 200) + (e.content.length > 200 ? '…' : '') : ''}</div>
-        ${tookaways ? '<div class="summary" style="color: var(--cyan); font-size: 0.8rem;">💡 ' + tookaways + '</div>' : ''}
+        ${topics ? '<div class="summary" style="color: var(--cyan); font-size: 0.8rem;">💡 ' + topics + '</div>' : ''}
         <div class="footer">
           <div>
             <span class="status-badge ${e.status}">${e.status}</span>
