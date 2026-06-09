@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+data/trend-radar.db
+data/trend-radar.db-wal
+data/trend-radar.db-shm
+.env
+*.log
