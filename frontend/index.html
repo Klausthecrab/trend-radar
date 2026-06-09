@@ -432,6 +432,7 @@ async function loadEntries() {
           <div>
             <span class="status-badge ${e.status}">${e.status}</span>
             ${relevance ? '<span class="relevance">' + relevance + '</span>' : ''}
+            ${e.obsidian_note_path ? '<span style="margin-left:0.5rem;font-size:0.8rem;">📝 <a href="obsidian://open?vault=osb&file=' + encodeURIComponent(e.obsidian_note_path) + '" target="_blank" style="color:var(--cyan);">Obsidian</a></span>' : ''}
           </div>
           <span style="color: var(--text-dim); font-size: 0.75rem;">${new Date(e.created_at).toLocaleString('de-DE')}</span>
         </div>

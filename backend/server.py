@@ -236,7 +236,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def _process_entry_background(entry_id: int, url: str, source_type: str, title: str):
-    """Background worker: run pipeline, update entry with transcript + analysis."""
+    """Background worker: run pipeline, update entry with transcript + analysis + Obsidian note."""
     print(f"🧵 Starte Pipeline für Entry #{entry_id}: {url[:60]}...")
     result = process_url(url, source_type, title)
 
@@ -246,6 +246,7 @@ def _process_entry_background(entry_id: int, url: str, source_type: str, title: 
 
     transcript = result.get("transcript")
     analysis = result.get("analysis")
+    obsidian_note = result.get("obsidian_note")
 
     if not transcript and not analysis:
         return  # nothing to update
@@ -258,8 +259,13 @@ def _process_entry_background(entry_id: int, url: str, source_type: str, title: 
         if analysis:
             db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
                        (json.dumps(analysis), entry_id))
+        if obsidian_note:
+            db.execute("UPDATE entries SET obsidian_note_path = ? WHERE id = ?",
+                       (obsidian_note, entry_id))
         db.commit()
         print(f"✅ Pipeline abgeschlossen für Entry #{entry_id}")
+        if obsidian_note:
+            print(f"   📝 Obsidian: {obsidian_note}")
     except Exception as e:
         print(f"❌ Pipeline-Update fehlgeschlagen für #{entry_id}: {e}")
     finally:

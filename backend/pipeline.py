@@ -9,6 +9,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from analysis import analyze_with_llm, generate_obsidian_note
+
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
 TEMP_DIR = ROOT / "data" / "temp"
@@ -151,58 +153,19 @@ def _transcribe_urllib(audio_path: str) -> str | None:
         return None
 
 
-def analyze_entry(title: str, content: str, source_type: str) -> dict | None:
-    """Analyze an entry: relevance + takeaways + action items.
-    Uses Hermes to generate analysis. This is a placeholder for now
-    — real LLM-based analysis comes in Issue #5."""
-    print(f"🔍 Analysiere Eintrag: {title[:50]}...")
-
-    # Placeholder: simple heuristic based on keywords
-    relevance = 1
-    takeaways = []
-    action_items = []
-
-    text = (title + " " + content).lower()
-
-    # Keyword-based relevance scoring
-    high_value = ["docker", "self-hosted", "selfhosted", "homelab", "opensource",
-                  "alternative", "linux", "server", "kubernetes", "k8s"]
-    medium_value = ["python", "api", "monitoring", "backup", "automation",
-                    "voice", "assistant", "ai", "llm", "ci/cd"]
-
-    for kw in high_value:
-        if kw in text:
-            relevance += 1
-    for kw in medium_value:
-        if kw in text:
-            relevance += 0.5
-
-    relevance = min(int(relevance), 5)
-
-    # Simple takeaways
-    if "docker" in text:
-        takeaways.append("Läuft in Docker → einfach auf Butler testbar")
-    if "self-hosted" in text or "selfhosted" in text:
-        takeaways.append("Self-Hosted → volle Kontrolle, kein Vendor-Lock-in")
-    if "alternative" in text:
-        takeaways.append("Mögliche Alternative zu bestehenden Tools prüfen")
-    if "voice" in text or "assistant" in text:
-        takeaways.append("Smart-Home-Integration für Butler denkbar")
-    if "ai" in text or "llm" in text:
-        takeaways.append("KI/LLM-Komponente — Hermes-Integration prüfen")
-
-    if not takeaways:
-        takeaways.append("Allgemeiner Tech-Trend — Relevanz für Butler prüfen")
-
-    action_items.append("Auf Butler testen")
-    if source_type == "youtube":
-        action_items.append("Video anschauen für Details")
-
-    return {
-        "relevance": relevance,
-        "takeaways": takeaways,
-        "action_items": action_items,
-    }
+def analyze_entry(title: str, content: str, source_type: str, entry_id: int = None) -> dict | None:
+    """Analyze an entry using Venice LLM. Returns {relevance, summary, takeaways, action_items, obsidian_note}."""
+    print(f"🔍 LLM-Analyse für: {title[:60]}...")
+    analysis = analyze_with_llm(title, content, source_type)
+    if not analysis:
+        print("⚠️  LLM-Analyse fehlgeschlagen, verwende Platzhalter")
+        return {
+            "relevance": 1,
+            "summary": "Keine Analyse verfügbar (LLM-Fehler)",
+            "takeaways": ["Inhalt manuell prüfen"],
+            "action_items": ["Auf Butler testen"],
+        }
+    return analysis
 
 
 def process_youtube(url: str, title: str = "") -> dict:
@@ -234,12 +197,21 @@ def process_youtube(url: str, title: str = "") -> dict:
     result["transcript"] = transcript
     result["status"] = "transcribed"
 
-    # Step 3: Analyze (heuristic for now)
-    analysis = analyze_entry(title or url, transcript, "youtube")
+    # Step 3: Analyze
+    analysis = analyze_entry(title or url, transcript, "youtube", entry_id=None)
     result["analysis"] = analysis
     result["status"] = "analyzed"
 
-    print(f"✅ YouTube-Pipeline abgeschlossen (Relevanz: {analysis['relevance']}/5)")
+    # Step 4: Generate Obsidian note
+    if analysis:
+        note_path = generate_obsidian_note(
+            {"id": "?", "title": title or url, "url": url, "source_type": "youtube"},
+            analysis
+        )
+        if note_path:
+            result["obsidian_note"] = note_path
+
+    print(f"✅ YouTube-Pipeline abgeschlossen (Relevanz: {analysis.get('relevance', '?')}/5)")
     print(f"{'='*50}")
     return result
 
