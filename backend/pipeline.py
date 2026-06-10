@@ -34,6 +34,38 @@ if not VENICE_KEY:
     print("⚠️  AUXILIARY_VISION_API_KEY nicht gesetzt — Venice STT nicht verfügbar")
 
 
+def get_youtube_metadata(url: str) -> dict:
+    """Extrahiere Thumbnail-URL + Channel via yt-dlp --print (schnell, kein Download)."""
+    print(f"📋 Hole YouTube-Metadaten: {url}")
+    meta = {"thumbnail_url": None, "channel": None}
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--print", "thumbnail", "--print", "channel", "--print", "channel_url",
+             "--print", "duration_string", url],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")
+            if len(lines) >= 1 and lines[0]:
+                meta["thumbnail_url"] = lines[0]
+            if len(lines) >= 2 and lines[1]:
+                meta["channel"] = lines[1]
+            print(f"   🖼️ Thumbnail: {meta['thumbnail_url']}")
+            print(f"   📺 Channel: {meta['channel']}")
+        else:
+            print(f"⚠️  yt-dlp metadata Fehler: {result.stderr[:200]}")
+    except Exception as e:
+        print(f"⚠️  yt-dlp metadata Exception: {e}")
+    # Fallback: Thumbnail-URL aus Video-ID konstruieren
+    if not meta["thumbnail_url"]:
+        import re
+        match = re.search(r"(?:v=|youtu\.be/|/shorts/)([a-zA-Z0-9_-]{11})", url)
+        if match:
+            meta["thumbnail_url"] = f"https://img.youtube.com/vi/{match.group(1)}/hqdefault.jpg"
+            print(f"   🖼️ Thumbnail (Fallback): {meta['thumbnail_url']}")
+    return meta
+
+
 def download_youtube_audio(url: str) -> str | None:
     """Download YouTube audio, return path to normalized MP3."""
     print(f"📥 Lade YouTube-Audio: {url}")
@@ -180,14 +212,18 @@ def analyze_entry(title: str, content: str, source_type: str, entry_id: int = No
 
 
 def process_youtube(url: str, title: str = "", entry_id: int | None = None) -> dict:
-    """Full pipeline: download YouTube audio → transcribe → analyze."""
+    """Full pipeline: get metadata → download YouTube audio → transcribe → analyze."""
     result = {"status": "pending", "url": url, "title": title,
-              "transcript": None, "analysis": None}
+              "transcript": None, "analysis": None, "thumbnail_url": None, "channel": None}
 
-    # Step 1: Download
     print(f"\n{'='*50}")
     print(f"🎬 Verarbeite YouTube: {url}")
-    _update_step(entry_id, "downloading")
+    _update_step(entry_id, "extracting")
+
+    # Step 0: Get metadata (thumbnail, channel)
+    meta = get_youtube_metadata(url)
+    result["thumbnail_url"] = meta["thumbnail_url"]
+    result["channel"] = meta["channel"]
     audio_path = download_youtube_audio(url)
     if not audio_path:
         result["status"] = "error"

@@ -278,6 +278,8 @@ def _process_entry_background(entry_id: int, url: str, source_type: str, title: 
     transcript = result.get("transcript")
     analysis = result.get("analysis")
     obsidian_note = result.get("obsidian_note")
+    thumbnail_url = result.get("thumbnail_url")
+    channel = result.get("channel")
 
     if not transcript and not analysis:
         # Not a YouTube URL or nothing extracted — just reset
@@ -296,8 +298,16 @@ def _process_entry_background(entry_id: int, url: str, source_type: str, title: 
         if obsidian_note:
             db.execute("UPDATE entries SET obsidian_note_path = ? WHERE id = ?",
                        (obsidian_note, entry_id))
+        if thumbnail_url:
+            db.execute("UPDATE entries SET thumbnail_url = ? WHERE id = ?",
+                       (thumbnail_url, entry_id))
+        if channel:
+            db.execute("UPDATE entries SET author = ? WHERE id = ?",
+                       (channel, entry_id))
         db.commit()
         print(f"✅ Pipeline abgeschlossen für Entry #{entry_id}")
+        if thumbnail_url:
+            print(f"   🖼️ Thumbnail: {thumbnail_url[:60]}...")
         if obsidian_note:
             print(f"   📝 Obsidian: {obsidian_note}")
     except Exception as e:

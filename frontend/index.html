@@ -250,6 +250,8 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
   .controls .filter select {
     padding: 0.4rem 0.75rem;
@@ -268,6 +270,80 @@
     text-align: center;
     padding: 3rem;
     color: var(--text-dim);
+  }
+
+  /* Sub-tabs */
+  .sub-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+  }
+  .sub-tab-btn {
+    padding: 0.4rem 0.9rem;
+    border: none;
+    background: var(--card);
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+  .sub-tab-btn:hover { color: var(--text); background: var(--card-hover); }
+  .sub-tab-btn.active {
+    color: #fff;
+    background: rgba(6,182,212,0.2);
+    box-shadow: 0 0 8px rgba(6,182,212,0.1);
+  }
+
+  /* YouTube Gallery */
+  .youtube-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .yt-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .yt-card:hover {
+    background: var(--card-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .yt-card .yt-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    display: block;
+    background: rgba(0,0,0,0.3);
+  }
+  .yt-card .yt-info {
+    padding: 0.75rem 1rem;
+  }
+  .yt-card .yt-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.4;
+    margin-bottom: 0.3rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .yt-card .yt-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+  .yt-card .yt-channel {
+    color: var(--cyan);
   }
 
   /* Modal */
@@ -424,6 +500,7 @@
     <button class="tab-btn active" id="tabStatus" onclick="switchTab('status')">📊 Status</button>
     <button class="tab-btn" id="tabEntries" onclick="switchTab('entries')">📋 Einträge</button>
     <button class="tab-btn" id="tabDump" onclick="switchTab('dump')">📥 Dump</button>
+    <button class="tab-btn" id="tabYoutube" onclick="switchTab('youtube')">🎬 YouTube-Log</button>
   </div>
 
   <!-- Status Panel -->
@@ -493,6 +570,16 @@
   </div>
 </div>
 
+<!-- YouTube-Log Panel -->
+<div class="panel" id="panelYoutube">
+  <div class="controls">
+    <div class="last-updated" id="youtubeUpdated"></div>
+  </div>
+  <div class="youtube-gallery" id="youtubeGallery">
+    <div class="empty-state">Lade YouTube-Einträge …</div>
+  </div>
+</div>
+
 <!-- Detail Modal -->
 <div class="modal-overlay" id="detailModal" onclick="closeDetail(event)">
   <div class="modal-box" onclick="event.stopPropagation()">
@@ -517,6 +604,7 @@ function switchTab(tab) {
   document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
   if (tab === 'status') loadStatus();
   if (tab === 'entries') loadEntries();
+  if (tab === 'youtube') loadYoutubeGallery();
 }
 
 // --- Status ---
@@ -544,6 +632,7 @@ async function loadStatus() {
 // --- Entries ---
 const STEP_LABELS = {
   'queued': '⏳ Warte auf Start…',
+  'extracting': '📋 Extrahiere Metadaten…',
   'downloading': '📥 Lade Audio herunter…',
   'transcribing': '🎤 Transkribiere Audio…',
   'analyzing': '🔍 Analysiere Inhalt…',
@@ -625,6 +714,49 @@ async function loadEntries() {
   }
 }
 
+// --- YouTube-Log Gallery ---
+async function loadYoutubeGallery() {
+  const container = document.getElementById('youtubeGallery');
+  document.getElementById('youtubeUpdated').textContent =
+    'Zuletzt aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+
+  try {
+    const res = await fetch(API + '/api/entries?source=youtube&limit=100');
+    const entries = await res.json();
+
+    if (!entries.length) {
+      container.innerHTML = '<div class="empty-state">Keine YouTube-Einträge</div>';
+      return;
+    }
+
+    container.innerHTML = entries.map(e => {
+      const thumbUrl = e.thumbnail_url || '';
+      const thumbHtml = thumbUrl
+        ? `<img class="yt-thumb" src="${escapeHtml(thumbUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+        : '<div class="yt-thumb" style="display:flex;align-items:center;justify-content:center;background:rgba(255,0,0,0.1);color:var(--text-dim);font-size:2rem;">🎬</div>';
+
+      const channel = e.author || '';
+      const date = e.published_at
+        ? new Date(e.published_at).toLocaleDateString('de-DE')
+        : '';
+
+      return `<div class="yt-card" onclick="openDetail(${e.id})">
+        ${thumbHtml}
+        <div class="yt-info">
+          <div class="yt-title">${escapeHtml(e.title || 'Kein Titel')}</div>
+          <div class="yt-meta">
+            <span class="yt-badge">YouTube</span>
+            ${channel ? '<span class="yt-channel">' + escapeHtml(channel) + '</span>' : ''}
+            ${date ? '<span>' + date + '</span>' : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state" style="color:var(--red)">⚠️ Fehler: ' + err.message + '</div>';
+  }
+}
+
 // --- Dump ---
 async function submitDump() {
   const btn = document.getElementById('dumpBtn');
@@ -669,6 +801,44 @@ async function submitDump() {
   btn.textContent = '📥 Einsenden';
 }
 
+// --- YouTube Gallery ---
+async function loadYoutubeGallery() {
+  const container = document.getElementById('youtubeGallery');
+  const updated = document.getElementById('youtubeUpdated');
+  updated.textContent = 'Zuletzt aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+  container.innerHTML = '<div class="empty-state">Lade YouTube-Einträge …</div>';
+
+  try {
+    const res = await fetch(API + '/api/entries?source=youtube&limit=50');
+    const entries = await res.json();
+    if (!entries.length) {
+      container.innerHTML = '<div class="empty-state">Keine YouTube-Einträge gefunden</div>';
+      return;
+    }
+    container.innerHTML = entries.map(e => {
+      const thumb = e.thumbnail_url
+        ? `<img class="yt-thumb" src="${e.thumbnail_url}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'yt-thumb\\' style=\\'display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--text-dim)\\'>🎬</div>'">`
+        : '<div class="yt-thumb" style="display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--text-dim)">🎬</div>';
+      const channel = e.author || 'Unbekannt';
+      const date = e.published_at
+        ? new Date(e.published_at).toLocaleDateString('de-DE')
+        : (e.created_at ? new Date(e.created_at).toLocaleDateString('de-DE') : '');
+      return `<div class="yt-card" onclick="openDetail(${e.id})">
+        ${thumb}
+        <div class="yt-info">
+          <div class="yt-title">${escapeHtml(e.title || 'Kein Titel')}</div>
+          <div class="yt-meta">
+            <span class="yt-channel">${escapeHtml(channel)}</span>
+            <span>${date}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state" style="color:var(--red)">⚠️ Fehler: ' + err.message + '</div>';
+  }
+}
+
 // Auto-refresh
 let refreshInterval;
 function startAutoRefresh() {
@@ -677,6 +847,7 @@ function startAutoRefresh() {
     const active = document.querySelector('.panel.active');
     if (active && active.id === 'panelStatus') loadStatus();
     if (active && active.id === 'panelEntries') loadEntries();
+    if (active && active.id === 'panelYoutube') loadYoutubeGallery();
   }, 30000);
 }
 

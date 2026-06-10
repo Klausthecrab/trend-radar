@@ -42,6 +42,9 @@ def migrate_db():
     if "processing_step" not in existing:
         conn.execute("ALTER TABLE entries ADD COLUMN processing_step TEXT")
         print("📦 Migration: processing_step hinzugefügt")
+    if "thumbnail_url" not in existing:
+        conn.execute("ALTER TABLE entries ADD COLUMN thumbnail_url TEXT")
+        print("📦 Migration: thumbnail_url hinzugefügt")
     conn.commit()
     conn.close()
 
