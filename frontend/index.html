@@ -270,10 +270,145 @@
     color: var(--text-dim);
   }
 
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    justify-content: center;
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 2rem 1rem;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: #12121e;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    max-width: 800px;
+    width: 100%;
+    margin: auto;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    animation: modalIn 0.2s ease-out;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    gap: 1rem;
+  }
+  .modal-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    line-height: 1.4;
+    margin: 0;
+    flex: 1;
+  }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    line-height: 1;
+    border-radius: 6px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+  .modal-close:hover { color: #fff; background: rgba(255,255,255,0.1); }
+  .modal-body {
+    padding: 1.25rem 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .modal-body::-webkit-scrollbar { width: 6px; }
+  .modal-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .modal-section {
+    margin-bottom: 1.25rem;
+  }
+  .modal-section:last-child { margin-bottom: 0; }
+  .modal-section h3 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin-bottom: 0.5rem;
+  }
+  .modal-section .content-text {
+    font-size: 0.9rem;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .modal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+  .modal-topic {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .modal-topic:last-child { margin-bottom: 0; }
+  .modal-topic h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    color: var(--cyan);
+  }
+  .modal-topic p {
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+  }
+  .modal-topic p:last-child { margin-bottom: 0; }
+  .modal-topic .label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .modal-footer {
+    padding: 0.75rem 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .modal-footer a {
+    color: var(--cyan);
+    text-decoration: none;
+    font-size: 0.85rem;
+  }
+  .modal-footer a:hover { text-decoration: underline; }
+
   @media (max-width: 640px) {
     .container { padding: 1rem; }
     .header h1 { font-size: 1.5rem; }
     .tabs { flex-direction: column; }
+    .modal-box { max-height: 90vh; border-radius: 10px; }
+    .modal-header, .modal-body, .modal-footer { padding: 1rem; }
   }
 </style>
 </head>
@@ -355,6 +490,20 @@
       <button id="dumpBtn" onclick="submitDump()">📥 Einsenden</button>
       <div id="dumpFeedback" class="dump-feedback"></div>
     </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detailModal" onclick="closeDetail(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h2 id="modalTitle">—</h2>
+      <button class="modal-close" onclick="closeDetail()">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="empty-state">Lade Details …</div>
+    </div>
+    <div class="modal-footer" id="modalFooter"></div>
   </div>
 </div>
 
@@ -443,7 +592,7 @@ async function loadEntries() {
           <span>${e.author || 'Unbekannt'}</span>
           <span>${e.published_at ? new Date(e.published_at).toLocaleDateString('de-DE') : ''}</span>
         </div>
-        <div class="title" onclick="window.open('${e.url}', '_blank')">${e.title || 'Kein Titel'}</div>
+        <div class="title" onclick="openDetail(${e.id})">${e.title || 'Kein Titel'}</div>
         <div class="summary">${e.content ? e.content.slice(0, 200) + (e.content.length > 200 ? '…' : '') : ''}</div>
         ${topics ? '<div class="summary" style="color: var(--cyan); font-size: 0.8rem;">💡 ' + topics + '</div>' : ''}
         <div class="footer">
@@ -529,6 +678,141 @@ function startAutoRefresh() {
     if (active && active.id === 'panelStatus') loadStatus();
     if (active && active.id === 'panelEntries') loadEntries();
   }, 30000);
+}
+
+// --- Detail Modal ---
+async function openDetail(entryId) {
+  const modal = document.getElementById('detailModal');
+  const titleEl = document.getElementById('modalTitle');
+  const bodyEl = document.getElementById('modalBody');
+  const footerEl = document.getElementById('modalFooter');
+
+  titleEl.textContent = 'Lade …';
+  bodyEl.innerHTML = '<div class="empty-state">⏳ Lade Details …</div>';
+  footerEl.innerHTML = '';
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  try {
+    const res = await fetch(API + '/api/entries/' + entryId);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const entry = await res.json();
+    renderDetailModal(entry, titleEl, bodyEl, footerEl);
+  } catch (err) {
+    bodyEl.innerHTML = '<div class="empty-state" style="color:var(--red)">⚠️ Fehler: ' + err.message + '</div>';
+  }
+}
+
+function closeDetail(event) {
+  if (event && event.target !== event.currentTarget) return; // only close on overlay click
+  const modal = document.getElementById('detailModal');
+  modal.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// Close on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('detailModal');
+    if (modal.classList.contains('open')) closeDetail();
+  }
+});
+
+function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
+  titleEl.textContent = entry.title || 'Kein Titel';
+
+  const sourceBadge = entry.source_type
+    ? `<span class="source-badge ${entry.source_type}">${entry.source_type}</span>`
+    : '';
+  const relevanceStars = entry.analysis && entry.analysis.relevance
+    ? '⭐'.repeat(entry.analysis.relevance)
+    : '';
+  const analysis = entry.analysis || {};
+
+  // Meta row
+  let metaHtml = `<div class="modal-meta">${sourceBadge}`;
+  if (entry.author) metaHtml += `<span style="color:var(--text-dim);font-size:0.85rem;">${entry.author}</span>`;
+  if (entry.published_at) metaHtml += `<span style="color:var(--text-dim);font-size:0.85rem;">${new Date(entry.published_at).toLocaleDateString('de-DE')}</span>`;
+  if (relevanceStars) metaHtml += `<span style="color:var(--orange);font-size:0.9rem;">${relevanceStars}</span>`;
+  if (entry.status === 'processing') {
+    const stepLabel = STEP_LABELS[entry.processing_step] || entry.processing_step;
+    metaHtml += `<span class="status-badge processing">🔄 ${stepLabel}</span>`;
+  } else {
+    metaHtml += `<span class="status-badge ${entry.status}">${entry.status}</span>`;
+  }
+  metaHtml += '</div>';
+
+  // Content
+  let bodyHtml = metaHtml;
+
+  // Full content / transcript
+  if (entry.content) {
+    bodyHtml += `<div class="modal-section">
+      <h3>📄 Inhalt</h3>
+      <div class="content-text">${escapeHtml(entry.content)}</div>
+    </div>`;
+  }
+
+  // Analysis
+  if (analysis.summary) {
+    bodyHtml += `<div class="modal-section">
+      <h3>📝 Zusammenfassung</h3>
+      <div class="content-text">${escapeHtml(analysis.summary)}</div>
+    </div>`;
+  }
+
+  if (analysis.topics && analysis.topics.length) {
+    bodyHtml += `<div class="modal-section">
+      <h3>🔍 Analyse</h3>`;
+    analysis.topics.forEach(t => {
+      bodyHtml += `<div class="modal-topic">
+        <h4>${escapeHtml(t.name || 'Thema')}</h4>
+        <p><span class="label">Was ist das?</span><br>${escapeHtml(t.what_is || '—')}</p>
+        <p><span class="label">Homelab-Mehrwert</span><br>${escapeHtml(t.homelab_value || '—')}</p>
+        <p><span class="label">Hermi/KI-Mehrwert</span><br>${escapeHtml(t.hermi_value || '—')}</p>
+      </div>`;
+    });
+    bodyHtml += '</div>';
+  }
+
+  // Fallback if analysis has old format (takeaways + action_items)
+  if (!analysis.topics && analysis.takeaways && analysis.takeaways.length) {
+    bodyHtml += `<div class="modal-section">
+      <h3>💡 Takeaways</h3>
+      <ul style="list-style:disc;padding-left:1.25rem;font-size:0.9rem;line-height:1.7;">`;
+    analysis.takeaways.forEach(t => {
+      bodyHtml += `<li>${escapeHtml(t)}</li>`;
+    });
+    bodyHtml += '</ul></div>';
+  }
+  if (!analysis.topics && analysis.action_items && analysis.action_items.length) {
+    bodyHtml += `<div class="modal-section">
+      <h3>🎯 Handlungsoptionen</h3>
+      <ul style="list-style:disc;padding-left:1.25rem;font-size:0.9rem;line-height:1.7;">`;
+    analysis.action_items.forEach(a => {
+      bodyHtml += `<li>${escapeHtml(a)}</li>`;
+    });
+    bodyHtml += '</ul></div>';
+  }
+
+  bodyEl.innerHTML = bodyHtml;
+
+  // Footer: links
+  let footerHtml = '';
+  if (entry.url) {
+    footerHtml += `<a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener">🔗 Original-Link</a>`;
+  }
+  if (entry.obsidian_note_path) {
+    footerHtml += `<a href="obsidian://open?vault=osb&file=${encodeURIComponent(entry.obsidian_note_path)}" target="_blank">📝 Obsidian-Note</a>`;
+  }
+  footerEl.innerHTML = footerHtml;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 // Init
