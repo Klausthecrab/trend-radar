@@ -393,6 +393,15 @@ async function loadStatus() {
 }
 
 // --- Entries ---
+const STEP_LABELS = {
+  'queued': '⏳ Warte auf Start…',
+  'downloading': '📥 Lade Audio herunter…',
+  'transcribing': '🎤 Transkribiere Audio…',
+  'analyzing': '🔍 Analysiere Inhalt…',
+  'note': '📝 Erstelle Obsidian-Notiz…',
+  'saving': '💾 Speichere…',
+};
+
 async function loadEntries() {
   const container = document.getElementById('entryList');
   const statusFilter = document.getElementById('statusFilter').value;
@@ -412,12 +421,21 @@ async function loadEntries() {
       return;
     }
 
+    const hasProcessing = entries.some(e => e.status === 'processing');
+
     container.innerHTML = entries.map(e => {
       const analysis = e.analysis || {};
       const relevance = analysis.relevance ? '⭐'.repeat(analysis.relevance) : '';
       const topics = analysis.topics && analysis.topics.length
         ? analysis.topics.slice(0, 2).map(t => t.name).join(' · ')
         : '';
+
+      // Status badge
+      let statusHtml = `<span class="status-badge ${e.status}">${e.status}</span>`;
+      if (e.status === 'processing' && e.processing_step) {
+        const label = STEP_LABELS[e.processing_step] || e.processing_step;
+        statusHtml = `<span class="status-badge processing">🔄 ${label}</span>`;
+      }
 
       return `<div class="entry-card">
         <div class="meta">
@@ -430,7 +448,7 @@ async function loadEntries() {
         ${topics ? '<div class="summary" style="color: var(--cyan); font-size: 0.8rem;">💡 ' + topics + '</div>' : ''}
         <div class="footer">
           <div>
-            <span class="status-badge ${e.status}">${e.status}</span>
+            ${statusHtml}
             ${relevance ? '<span class="relevance">' + relevance + '</span>' : ''}
             ${e.obsidian_note_path ? '<span style="margin-left:0.5rem;font-size:0.8rem;">📝 <a href="obsidian://open?vault=osb&file=' + encodeURIComponent(e.obsidian_note_path) + '" target="_blank" style="color:var(--cyan);">Obsidian</a></span>' : ''}
           </div>
@@ -438,6 +456,21 @@ async function loadEntries() {
         </div>
       </div>`;
     }).join('');
+
+    // Faster polling when entries are processing
+    if (hasProcessing && (!refreshInterval || refreshInterval._id !== 'fast')) {
+      if (refreshInterval) clearInterval(refreshInterval);
+      refreshInterval = setInterval(() => {
+        const active = document.querySelector('.panel.active');
+        if (active && active.id === 'panelStatus') loadStatus();
+        if (active && active.id === 'panelEntries') loadEntries();
+      }, 5000);
+      refreshInterval._id = 'fast';
+    } else if (!hasProcessing && refreshInterval && refreshInterval._id === 'fast') {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+      startAutoRefresh();
+    }
   } catch (err) {
     container.innerHTML = '<div class="empty-state">⚠️ Fehler: ' + err.message + '</div>';
   }

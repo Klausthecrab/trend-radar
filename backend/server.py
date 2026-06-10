@@ -8,7 +8,7 @@ import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from database import get_db, init_db, seed_dummy_data, DB_PATH
+from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, DB_PATH
 from pipeline import process_url
 
 HERE = Path(__file__).parent.resolve()
@@ -43,6 +43,26 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/health":
             self._send_json({"status": "ok", "port": PORT})
             return
+
+        # /api/entries/:id (must come before /api/entries exact match due to routing order)
+        if path.startswith("/api/entries/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                entry_id = parts[3]
+                db = get_db()
+                row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                db.close()
+                if row:
+                    entry = dict(row)
+                    if entry.get("analysis"):
+                        try:
+                            entry["analysis"] = json.loads(entry["analysis"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    self._send_json(entry)
+                else:
+                    self._send_json({"error": "Not Found"}, 404)
+                return
 
         if path == "/api/entries":
             db = get_db()
@@ -153,6 +173,14 @@ class Handler(SimpleHTTPRequestHandler):
                     # Trigger pipeline in background for supported types
                     is_youtube = "youtube" in url or "youtu.be" in url
                     if source_type == "youtube" or is_youtube:
+                        # Set processing status immediately
+                        db2 = get_db()
+                        db2.execute(
+                            "UPDATE entries SET status = 'processing', processing_step = 'queued' WHERE id = ?",
+                            (entry_id,)
+                        )
+                        db2.commit()
+                        db2.close()
                         threading.Thread(
                             target=_process_entry_background,
                             args=(entry_id, url, source_type, title),
@@ -238,10 +266,13 @@ class Handler(SimpleHTTPRequestHandler):
 def _process_entry_background(entry_id: int, url: str, source_type: str, title: str):
     """Background worker: run pipeline, update entry with transcript + analysis + Obsidian note."""
     print(f"🧵 Starte Pipeline für Entry #{entry_id}: {url[:60]}...")
-    result = process_url(url, source_type, title)
+
+    set_processing_step(entry_id, "downloading")
+    result = process_url(url, source_type, title, entry_id=entry_id)
 
     if result.get("status") == "error":
         print(f"⚠️  Pipeline fehlgeschlagen für #{entry_id}: {result.get('error')}")
+        set_processing_step(entry_id, None)  # reset to unread
         return
 
     transcript = result.get("transcript")
@@ -249,8 +280,11 @@ def _process_entry_background(entry_id: int, url: str, source_type: str, title: 
     obsidian_note = result.get("obsidian_note")
 
     if not transcript and not analysis:
-        return  # nothing to update
+        # Not a YouTube URL or nothing extracted — just reset
+        set_processing_step(entry_id, None)
+        return
 
+    set_processing_step(entry_id, "saving")
     db = get_db()
     try:
         if transcript:
@@ -270,6 +304,8 @@ def _process_entry_background(entry_id: int, url: str, source_type: str, title: 
         print(f"❌ Pipeline-Update fehlgeschlagen für #{entry_id}: {e}")
     finally:
         db.close()
+    # Done — reset processing status
+    set_processing_step(entry_id, None)
 
 
 def main():
@@ -278,6 +314,8 @@ def main():
         print("📦 Initialisiere Datenbank...")
         init_db()
         seed_dummy_data()
+    else:
+        migrate_db()  # non-destructive upgrades
 
     server = HTTPServer(("0.0.0.0", PORT), Handler)
     print(f"🚀 Trend-Radar läuft auf http://0.0.0.0:{PORT}")

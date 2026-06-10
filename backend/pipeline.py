@@ -19,6 +19,17 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 VENICE_API = "https://api.venice.ai/api/v1/audio/transcriptions"
 VENICE_KEY = os.environ.get("AUXILIARY_VISION_API_KEY", "")
 
+# Lazy import to avoid circular dependency
+_processing_step_fn = None
+
+def _update_step(entry_id, step):
+    global _processing_step_fn
+    if _processing_step_fn is None:
+        from database import set_processing_step as _fn
+        _processing_step_fn = _fn
+    if entry_id is not None:
+        _processing_step_fn(entry_id, step)
+
 if not VENICE_KEY:
     print("⚠️  AUXILIARY_VISION_API_KEY nicht gesetzt — Venice STT nicht verfügbar")
 
@@ -168,7 +179,7 @@ def analyze_entry(title: str, content: str, source_type: str, entry_id: int = No
     return analysis
 
 
-def process_youtube(url: str, title: str = "") -> dict:
+def process_youtube(url: str, title: str = "", entry_id: int | None = None) -> dict:
     """Full pipeline: download YouTube audio → transcribe → analyze."""
     result = {"status": "pending", "url": url, "title": title,
               "transcript": None, "analysis": None}
@@ -176,6 +187,7 @@ def process_youtube(url: str, title: str = "") -> dict:
     # Step 1: Download
     print(f"\n{'='*50}")
     print(f"🎬 Verarbeite YouTube: {url}")
+    _update_step(entry_id, "downloading")
     audio_path = download_youtube_audio(url)
     if not audio_path:
         result["status"] = "error"
@@ -183,6 +195,7 @@ def process_youtube(url: str, title: str = "") -> dict:
         return result
 
     # Step 2: Transcribe
+    _update_step(entry_id, "transcribing")
     transcript = transcribe_audio(audio_path)
     try:
         os.unlink(audio_path)
@@ -198,12 +211,14 @@ def process_youtube(url: str, title: str = "") -> dict:
     result["status"] = "transcribed"
 
     # Step 3: Analyze
+    _update_step(entry_id, "analyzing")
     analysis = analyze_entry(title or url, transcript, "youtube", entry_id=None)
     result["analysis"] = analysis
     result["status"] = "analyzed"
 
     # Step 4: Generate Obsidian note
     if analysis:
+        _update_step(entry_id, "note")
         note_path = generate_obsidian_note(
             {"id": "?", "title": title or url, "url": url, "source_type": "youtube"},
             analysis
@@ -216,10 +231,10 @@ def process_youtube(url: str, title: str = "") -> dict:
     return result
 
 
-def process_url(url: str, source_type: str, title: str = "") -> dict:
+def process_url(url: str, source_type: str, title: str = "", entry_id: int | None = None) -> dict:
     """Process any URL: YouTube gets full pipeline, others get basic analysis."""
     if source_type == "youtube" or "youtube.com" in url or "youtu.be" in url:
-        return process_youtube(url, title)
+        return process_youtube(url, title, entry_id)
 
     # For Reddit/Web/RSS — basic analysis only (no content extraction yet)
     return {

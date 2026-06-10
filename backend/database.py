@@ -20,6 +20,32 @@ def get_db():
     return conn
 
 
+def set_processing_step(entry_id: int, step: str | None):
+    """Update processing_step and optionally status for an entry."""
+    try:
+        db = get_db()
+        if step is None:
+            db.execute("UPDATE entries SET status = 'unread', processing_step = NULL WHERE id = ?", (entry_id,))
+        else:
+            db.execute("UPDATE entries SET processing_step = ? WHERE id = ?", (step, entry_id))
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"⚠️  set_processing_step Fehler für #{entry_id}: {e}")
+
+
+def migrate_db():
+    """Add columns that may not exist yet (non-destructive upgrades)."""
+    conn = get_db()
+    cursor = conn.execute("PRAGMA table_info(entries)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if "processing_step" not in existing:
+        conn.execute("ALTER TABLE entries ADD COLUMN processing_step TEXT")
+        print("📦 Migration: processing_step hinzugefügt")
+    conn.commit()
+    conn.close()
+
+
 def init_db():
     conn = get_db()
     conn.executescript("""
