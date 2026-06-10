@@ -69,7 +69,7 @@ Regeln:
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.3,
-        "max_tokens": 2048,
+        "max_tokens": 8192,
     }
 
     try:
