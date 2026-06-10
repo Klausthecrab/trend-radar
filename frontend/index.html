@@ -501,6 +501,7 @@
     <button class="tab-btn" id="tabEntries" onclick="switchTab('entries')">📋 Einträge</button>
     <button class="tab-btn" id="tabDump" onclick="switchTab('dump')">📥 Dump</button>
     <button class="tab-btn" id="tabYoutube" onclick="switchTab('youtube')">🎬 YouTube-Log</button>
+    <button class="tab-btn" id="tabSources" onclick="switchTab('sources')">📡 Quellen</button>
   </div>
 
   <!-- Status Panel -->
@@ -580,6 +581,42 @@
   </div>
 </div>
 
+<!-- Quellen Panel -->
+<div class="panel" id="panelSources">
+  <div class="controls">
+    <div class="filter">
+      <button class="sub-tab-btn" onclick="triggerScan()" style="padding:0.4rem 1rem;">🔄 Jetzt scannen</button>
+    </div>
+    <div class="last-updated" id="sourcesUpdated"></div>
+  </div>
+  <div class="dump-form" style="max-width:100%;margin-bottom:1.5rem;">
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:0.75rem;align-items:end;">
+      <div>
+        <label>Quell-URL</label>
+        <input type="text" id="sourceUrl" placeholder="https://reddit.com/r/selfhosted oder RSS-Feed-URL">
+      </div>
+      <div>
+        <label>Typ</label>
+        <select id="sourceType">
+          <option value="subreddit">🗨️ Subreddit</option>
+          <option value="rss">📰 RSS/Atom</option>
+        </select>
+      </div>
+      <div>
+        <label>Name</label>
+        <input type="text" id="sourceName" placeholder="z.B. r/selfhosted">
+      </div>
+      <div>
+        <button onclick="addSource()" style="margin-top:1.25rem;padding:0.6rem 1.2rem;background:linear-gradient(135deg,var(--accent),#6d28d9);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;white-space:nowrap;">➕ Hinzufügen</button>
+      </div>
+    </div>
+    <div id="sourceFeedback" class="dump-feedback"></div>
+  </div>
+  <div class="entry-list" id="sourceList">
+    <div class="empty-state">Lade Quellen …</div>
+  </div>
+</div>
+
 <!-- Detail Modal -->
 <div class="modal-overlay" id="detailModal" onclick="closeDetail(event)">
   <div class="modal-box" onclick="event.stopPropagation()">
@@ -605,6 +642,7 @@ function switchTab(tab) {
   if (tab === 'status') loadStatus();
   if (tab === 'entries') loadEntries();
   if (tab === 'youtube') loadYoutubeGallery();
+  if (tab === 'sources') loadSources();
 }
 
 // --- Status ---
@@ -984,6 +1022,110 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// --- Sources Tab ---
+async function loadSources() {
+  const container = document.getElementById('sourceList');
+  document.getElementById('sourcesUpdated').textContent =
+    'Zuletzt aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+
+  try {
+    const res = await fetch(API + '/api/sources');
+    const sources = await res.json();
+    if (!sources.length) {
+      container.innerHTML = '<div class="empty-state">Keine Quellen konfiguriert. Füge oben eine hinzu.</div>';
+      return;
+    }
+    container.innerHTML = sources.map(s => {
+      const enabled = s.enabled ? '✅ Aktiv' : '⛔ Deaktiviert';
+      const lastScan = s.last_scanned_at
+        ? new Date(s.last_scanned_at).toLocaleString('de-DE')
+        : 'Nie';
+      const intervalLabel = s.interval === 'hourly' ? 'Stündlich' : s.interval === 'daily' ? 'Täglich' : s.interval;
+      return `<div class="entry-card">
+        <div class="meta">
+          <span class="source-badge ${s.type === 'subreddit' ? 'reddit' : 'rss'}">${s.type}</span>
+          <span>${escapeHtml(s.name || s.url)}</span>
+        </div>
+        <div style="font-size:0.85rem;margin-bottom:0.3rem;">
+          <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" style="color:var(--cyan);">${escapeHtml(s.url)}</a>
+        </div>
+        <div class="footer">
+          <div>
+            <span style="color:var(--text-dim);font-size:0.8rem;">🔄 ${intervalLabel}</span>
+            <span style="color:var(--text-dim);font-size:0.8rem;margin-left:1rem;">${enabled}</span>
+            <span style="color:var(--text-dim);font-size:0.8rem;margin-left:1rem;">📅 Letzter Scan: ${lastScan}</span>
+          </div>
+          <button onclick="deleteSource(${s.id})" style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--red);padding:0.25rem 0.6rem;border-radius:4px;cursor:pointer;font-size:0.8rem;">Löschen</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state" style="color:var(--red)">⚠️ Fehler: ' + err.message + '</div>';
+  }
+}
+
+async function addSource() {
+  const url = document.getElementById('sourceUrl').value.trim();
+  const type = document.getElementById('sourceType').value;
+  const name = document.getElementById('sourceName').value.trim();
+  const feedback = document.getElementById('sourceFeedback');
+
+  if (!url) {
+    feedback.className = 'dump-feedback error';
+    feedback.textContent = '⚠️ Bitte gib eine URL ein.';
+    return;
+  }
+
+  try {
+    const res = await fetch(API + '/api/sources', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, url, name, interval: 'daily' })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      feedback.className = 'dump-feedback success';
+      feedback.textContent = '✅ Quelle hinzugefügt (ID: ' + (data.id || '') + ')';
+      document.getElementById('sourceUrl').value = '';
+      document.getElementById('sourceName').value = '';
+      loadSources();
+    } else {
+      feedback.className = 'dump-feedback error';
+      feedback.textContent = '⚠️ ' + (data.error || 'Unbekannter Fehler');
+    }
+  } catch (err) {
+    feedback.className = 'dump-feedback error';
+    feedback.textContent = '⚠️ Netzwerkfehler: ' + err.message;
+  }
+}
+
+async function deleteSource(id) {
+  if (!confirm('Quelle wirklich löschen?')) return;
+  try {
+    const res = await fetch(API + '/api/sources/' + id, { method: 'DELETE' });
+    if (res.ok) {
+      loadSources();
+    } else {
+      const data = await res.json();
+      alert('Fehler: ' + (data.error || 'Unbekannt'));
+    }
+  } catch (err) {
+    alert('Netzwerkfehler: ' + err.message);
+  }
+}
+
+async function triggerScan() {
+  try {
+    const res = await fetch(API + '/api/scan/now', { method: 'POST' });
+    const data = await res.json();
+    alert(data.message || 'Scan gestartet');
+    // Reload sources after a delay to show updated last_scanned_at
+    setTimeout(loadSources, 5000);
+  } catch (err) {
+    alert('Fehler: ' + err.message);
+  }
 }
 
 // Init

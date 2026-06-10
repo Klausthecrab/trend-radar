@@ -267,17 +267,75 @@ def process_youtube(url: str, title: str = "", entry_id: int | None = None) -> d
     return result
 
 
-def process_url(url: str, source_type: str, title: str = "", entry_id: int | None = None) -> dict:
-    """Process any URL: YouTube gets full pipeline, others get basic analysis."""
+def process_url(url: str, source_type: str, title: str = "",
+                entry_id: int | None = None,
+                preloaded_content: str | None = None) -> dict:
+    """Process any URL: YouTube gets full pipeline, others get LLM analysis.
+
+    Args:
+        url: The source URL.
+        source_type: 'youtube', 'reddit', 'rss', or 'web'.
+        title: Optional title.
+        entry_id: DB entry ID for status updates.
+        preloaded_content: Pre-extracted content (from scanner). If provided
+            and not a YouTube URL, runs analysis directly.
+    """
     if source_type == "youtube" or "youtube.com" in url or "youtu.be" in url:
         return process_youtube(url, title, entry_id)
 
-    # For Reddit/Web/RSS — basic analysis only (no content extraction yet)
+    # Non-YouTube: use preloaded content or run basic analysis on title only
+    if preloaded_content:
+        from database import get_db
+        from database import set_processing_step
+
+        print(f"🔍 Analysiere Entry #{entry_id}: {title[:60]}...")
+
+        _update_step(entry_id, "analyzing")
+        analysis = analyze_entry(title, preloaded_content, source_type, entry_id=None)
+
+        _update_step(entry_id, "note")
+        note_path = None
+        if analysis:
+            note_path = generate_obsidian_note(
+                {"id": entry_id, "title": title, "url": url, "source_type": source_type},
+                analysis
+            )
+        _update_step(entry_id, "saving")
+
+        # Store in DB
+        if analysis or note_path:
+            db = get_db()
+            try:
+                if analysis:
+                    db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
+                               (json.dumps(analysis), entry_id))
+                if note_path:
+                    db.execute("UPDATE entries SET obsidian_note_path = ? WHERE id = ?",
+                               (note_path, entry_id))
+                if not db.execute("SELECT content FROM entries WHERE id = ?", (entry_id,)).fetchone()["content"]:
+                    db.execute("UPDATE entries SET content = ? WHERE id = ?",
+                               (preloaded_content[:5000], entry_id))
+                db.commit()
+            except Exception as e:
+                print(f"⚠️  DB-Update fehlgeschlagen für #{entry_id}: {e}")
+            finally:
+                db.close()
+
+        return {
+            "status": "analyzed" if analysis else "error",
+            "url": url,
+            "title": title,
+            "analysis": analysis,
+            "obsidian_note": note_path,
+        }
+
+    # Fallback: no content, just acknowledge
+    print(f"ℹ️  Kein Content für {source_type}-Entry #{entry_id}: {title[:50]}...")
     return {
         "status": "pending",
         "url": url,
         "title": title,
-        "message": "Nicht-YouTube-URLs werden in Issue #5 mit Content-Extraktion versorgt",
+        "message": "Kein Inhalt zum Analysieren (Scraping nicht implementiert)",
     }
 
 

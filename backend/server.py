@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, DB_PATH
 from pipeline import process_url
+from scanner import scan_all_sources
 
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
@@ -213,8 +214,12 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/scan/now":
-            # Placeholder — real cron scanner comes in Issue #6
-            self._send_json({"message": "Scan gestartet (Platzhalter — echter Scanner folgt in Issue #6)"})
+            # Run scan in background thread so the request returns immediately
+            def _run_scan():
+                result = scan_all_sources()
+                print(f"✅ Scan abgeschlossen: {result['total_new']} neue Einträge")
+            threading.Thread(target=_run_scan, daemon=True).start()
+            self._send_json({"message": "Scan gestartet — läuft im Hintergrund"})
             return
 
         self._send_json({"error": "Not Found"}, 404)
