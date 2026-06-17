@@ -1,0 +1,21 @@
+name: Block Direct Push to Default Branch
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  revert:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Revert direct push
+        run: |
+          git config user.name "hermes-cage-guardian"
+          git config user.email "hermes-cage-guardian@butler.local"
+          git revert --no-edit HEAD
+          MSG=$(git log -1 --format='%s')
+          git commit --amend -m "${MSG} [skip ci]"
+          git push
