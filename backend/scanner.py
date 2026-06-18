@@ -212,6 +212,13 @@ def _analyze_entry_background(entry_id: int, title: str, content: str, source_ty
     print(f"🧵 Analysiere Scanned-Entry #{entry_id}: {title[:50]}...")
     set_processing_step(entry_id, "analyzing")
 
+    # Pre-Analyse (Metadaten + kanonische URL) — korrigiert URL vor Analyse (Issue #17)
+    try:
+        from server import _preanalyze_entry
+        _preanalyze_entry(entry_id)
+    except Exception:
+        pass
+
     try:
         result = process_url("", source_type, title, entry_id=entry_id, preloaded_content=content)
         # process_url stores analysis + Obsidian note in DB

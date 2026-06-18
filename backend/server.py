@@ -23,9 +23,12 @@ def _detect_source_type(url: str) -> str:
     return "web"
 
 
-def _fetch_page_title(url: str) -> str | None:
-    """Fetch a page and extract its title via OpenGraph or <title> tag."""
+def _fetch_page_meta(url: str) -> dict:
+    """Fetch page and extract og:title, og:url, <title>.
+    Returns {'title': ..., 'canonical_url': ...} — both optional.
+    """
     import urllib.request
+    result = {"title": None, "canonical_url": None}
     try:
         req = urllib.request.Request(
             url,
@@ -34,19 +37,31 @@ def _fetch_page_title(url: str) -> str | None:
         with urllib.request.urlopen(req, timeout=15) as resp:
             html = resp.read().decode("utf-8", errors="replace")
     except Exception as e:
-        print(f"⚠️  Title-Fetch Fehler für {url[:60]}...: {e}")
-        return None
+        print(f"⚠️  Meta-Fetch Fehler für {url[:60]}...: {e}")
+        return result
 
-    # Try og:title first
     import re
+    # Try og:title first
     m = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', html, re.I)
     if m:
-        return m.group(1)
-    # Fallback to <title>
-    m = re.search(r'<title>([^<]+)</title>', html, re.I)
+        result["title"] = m.group(1)
+    else:
+        # Fallback to <title>
+        m = re.search(r'<title>([^<]+)</title>', html, re.I)
+        if m:
+            result["title"] = m.group(1).strip()
+
+    # Try og:url for canonical URL
+    m = re.search(r'<meta\s+property=["\']og:url["\']\s+content=["\']([^"\']+)["\']', html, re.I)
     if m:
-        return m.group(1).strip()
-    return None
+        result["canonical_url"] = m.group(1)
+    else:
+        # Fallback: <link rel="canonical">
+        m = re.search(r'<link\s+rel=["\']canonical["\']\s+href=["\']([^"\']+)["\']', html, re.I)
+        if m:
+            result["canonical_url"] = m.group(1)
+
+    return result
 
 
 def _preanalyze_entry(entry_id: int):
@@ -90,14 +105,23 @@ def _preanalyze_entry(entry_id: int):
                 except Exception:
                     pass
         else:
-            # Non-YouTube: fetch page title if missing
-            if not title:
-                fetched = _fetch_page_title(url)
-                if fetched:
-                    title = fetched
-                    db.execute("UPDATE entries SET title = ? WHERE id = ?",
-                               (title, entry_id))
-                    print(f"   📝 Titel ermittelt: {title[:60]}")
+            # Non-YouTube: fetch page meta (title + canonical URL)
+            meta = _fetch_page_meta(url)
+
+            # Titel aktualisieren falls fehlend
+            if not title and meta.get("title"):
+                title = meta["title"]
+                db.execute("UPDATE entries SET title = ? WHERE id = ?",
+                           (title, entry_id))
+                print(f"   📝 Titel ermittelt: {title[:60]}")
+
+            # Kanonische URL checken und ggf. korrigieren (Issue #17)
+            canonical = meta.get("canonical_url")
+            if canonical and canonical != url:
+                print(f"   🔗 Kanonische URL gefunden: {canonical[:80]}...")
+                db.execute("UPDATE entries SET url = ? WHERE id = ?",
+                           (canonical, entry_id))
+                url = canonical  # fürs Log unten
 
         # Set status to pre_analyzed
         db.execute("UPDATE entries SET status = 'pre_analyzed' WHERE id = ?", (entry_id,))
