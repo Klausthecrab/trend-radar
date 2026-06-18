@@ -11,6 +11,7 @@ from pathlib import Path
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
 DATA_DIR = Path(os.environ.get('TREND_DATA_DIR', str(ROOT / "data")))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "trend-radar.db"
 
 
