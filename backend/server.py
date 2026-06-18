@@ -3,6 +3,7 @@
 
 import json
 import os
+import sys
 import threading
 import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -12,10 +13,110 @@ from database import get_db, init_db, seed_dummy_data, migrate_db, set_processin
 from pipeline import process_url
 from scanner import scan_all_sources
 
+def _detect_source_type(url: str) -> str:
+    """Detect source type from URL."""
+    url_lower = url.lower()
+    if "youtube.com" in url_lower or "youtu.be" in url_lower:
+        return "youtube"
+    if "reddit.com" in url_lower:
+        return "reddit"
+    return "web"
+
+
+def _fetch_page_title(url: str) -> str | None:
+    """Fetch a page and extract its title via OpenGraph or <title> tag."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        print(f"⚠️  Title-Fetch Fehler für {url[:60]}...: {e}")
+        return None
+
+    # Try og:title first
+    import re
+    m = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', html, re.I)
+    if m:
+        return m.group(1)
+    # Fallback to <title>
+    m = re.search(r'<title>([^<]+)</title>', html, re.I)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def _preanalyze_entry(entry_id: int):
+    """Background job: fetch metadata (title, thumbnail, type) for an entry.
+    Updates the DB entry and sets status to 'pre_analyzed'."""
+    from database import get_db
+    db = get_db()
+    try:
+        row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return
+        entry = dict(row)
+        url = entry["url"]
+        title = entry["title"] or ""
+        source_type = entry["source_type"]
+
+        print(f"🧵 Pre-Analyse für Entry #{entry_id}: {url[:60]}...")
+
+        # YouTube: use existing metadata fetcher
+        if source_type == "youtube":
+            from pipeline import get_youtube_metadata
+            meta = get_youtube_metadata(url)
+            if meta.get("thumbnail_url"):
+                db.execute("UPDATE entries SET thumbnail_url = ? WHERE id = ?",
+                           (meta["thumbnail_url"], entry_id))
+            if meta.get("channel"):
+                db.execute("UPDATE entries SET author = ? WHERE id = ?",
+                           (meta["channel"], entry_id))
+            if not title and meta.get("channel"):
+                # We got channel but not video title — yt-dlp can give us title too
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ["yt-dlp", "--print", "title", url],
+                        capture_output=True, text=True, timeout=15
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        title = result.stdout.strip()
+                        db.execute("UPDATE entries SET title = ? WHERE id = ?",
+                                   (title, entry_id))
+                except Exception:
+                    pass
+        else:
+            # Non-YouTube: fetch page title if missing
+            if not title:
+                fetched = _fetch_page_title(url)
+                if fetched:
+                    title = fetched
+                    db.execute("UPDATE entries SET title = ? WHERE id = ?",
+                               (title, entry_id))
+                    print(f"   📝 Titel ermittelt: {title[:60]}")
+
+        # Set status to pre_analyzed
+        db.execute("UPDATE entries SET status = 'pre_analyzed' WHERE id = ?", (entry_id,))
+        db.commit()
+        print(f"✅ Pre-Analyse abgeschlossen für #{entry_id}: {title[:60] if title else url[:60]}...")
+    except Exception as e:
+        print(f"⚠️  Pre-Analyse Fehler für #{entry_id}: {e}")
+    finally:
+        db.close()
+
+
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
 FRONTEND = ROOT / "frontend"
 PORT = 9126
+if 'PORT' in os.environ:
+    PORT = int(os.environ['PORT'])
+if len(sys.argv) > 1:
+    PORT = int(sys.argv[1])
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -155,13 +256,18 @@ class Handler(SimpleHTTPRequestHandler):
             if not url:
                 self._send_json({"error": "url is required"}, 400)
                 return
-            source_type = body.get("source_type", "web")
-            title = body.get("title", "")
+
+            # Auto-detect source_type if not explicitly set
+            source_type = body.get("source_type", "").strip()
+            if not source_type or source_type == "web":
+                source_type = _detect_source_type(url)
+
+            title = body.get("title", "").strip()
 
             db = get_db()
             try:
                 db.execute(
-                    "INSERT OR IGNORE INTO entries (source_type, url, title, status) VALUES (?, ?, ?, 'unread')",
+                    "INSERT OR IGNORE INTO entries (source_type, url, title, status) VALUES (?, ?, ?, 'new')",
                     (source_type, url, title)
                 )
                 db.commit()
@@ -169,24 +275,13 @@ class Handler(SimpleHTTPRequestHandler):
                 db.close()
                 if entry_row:
                     entry_id = entry_row["id"]
-                    source_type = entry_row["source_type"]
 
-                    # Trigger pipeline in background for supported types
-                    is_youtube = "youtube" in url or "youtu.be" in url
-                    if source_type == "youtube" or is_youtube:
-                        # Set processing status immediately
-                        db2 = get_db()
-                        db2.execute(
-                            "UPDATE entries SET status = 'processing', processing_step = 'queued' WHERE id = ?",
-                            (entry_id,)
-                        )
-                        db2.commit()
-                        db2.close()
-                        threading.Thread(
-                            target=_process_entry_background,
-                            args=(entry_id, url, source_type, title),
-                            daemon=True
-                        ).start()
+                    # Start pre-analysis in background (enrich metadata, set status to pre_analyzed)
+                    threading.Thread(
+                        target=_preanalyze_entry,
+                        args=(entry_id,),
+                        daemon=True
+                    ).start()
 
                     self._send_json({"id": entry_id, "message": "Eintrag erstellt"}, 201)
                 else:
@@ -285,6 +380,7 @@ def _process_entry_background(entry_id: int, url: str, source_type: str, title: 
     obsidian_note = result.get("obsidian_note")
     thumbnail_url = result.get("thumbnail_url")
     channel = result.get("channel")
+    language = result.get("language")
 
     if not transcript and not analysis:
         # Not a YouTube URL or nothing extracted — just reset
@@ -309,6 +405,9 @@ def _process_entry_background(entry_id: int, url: str, source_type: str, title: 
         if channel:
             db.execute("UPDATE entries SET author = ? WHERE id = ?",
                        (channel, entry_id))
+        if language:
+            db.execute("UPDATE entries SET language = ? WHERE id = ?",
+                       (language, entry_id))
         db.commit()
         print(f"✅ Pipeline abgeschlossen für Entry #{entry_id}")
         if thumbnail_url:

@@ -243,6 +243,44 @@
   }
   .dump-feedback.success { display: block; background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
   .dump-feedback.error { display: block; background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .option-hint {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 1rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(124,58,237,0.08);
+    border-radius: 6px;
+    border: 1px solid rgba(124,58,237,0.15);
+  }
+  .optional { color: var(--text-dim); font-weight: 400; font-style: italic; }
+  .dump-form textarea {
+    width: 100%;
+    padding: 0.7rem;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.9rem;
+    font-family: inherit;
+    outline: none;
+    resize: vertical;
+    transition: border-color 0.2s;
+  }
+  .dump-form textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 8px rgba(124,58,237,0.15);
+  }
+  .dump-results { margin-top: 1rem; display: none; }
+  .dump-results.show { display: block; }
+  .dump-result-item {
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-bottom: 0.25rem;
+  }
+  .dump-result-item.success { background: rgba(34,197,94,0.1); color: var(--green); }
+  .dump-result-item.error { background: rgba(239,68,68,0.1); color: var(--red); }
+  .dump-result-item.duplicate { background: rgba(245,158,11,0.1); color: var(--orange); }
 
   /* Controls */
   .controls {
@@ -555,18 +593,23 @@
   <!-- Dump Panel -->
   <div class="panel" id="panelDump">
     <div class="dump-form">
-      <label>Quell-Typ</label>
+      <div class="option-hint">Felder werden automatisch erkannt — nur die URL(s) sind Pflicht</div>
+      <label>URLs <span class="optional">(eine pro Zeile)</span></label>
+      <textarea id="dumpUrls" rows="4" placeholder="https://youtube.com/watch?v=...
+https://reddit.com/r/selfhosted/...
+https://example.com/blog/..."></textarea>
+      <label>Quell-Typ <span class="optional">(optional)</span></label>
       <select id="dumpType">
+        <option value="">🔍 Automatisch</option>
         <option value="youtube">🎬 YouTube</option>
         <option value="reddit">🗨️ Reddit</option>
         <option value="web">🌐 Web/URL</option>
       </select>
-      <label>URL / Link</label>
-      <input type="url" id="dumpUrl" placeholder="https://youtube.com/watch?v=... oder Reddit-URL">
-      <label>Titel (optional)</label>
-      <input type="text" id="dumpTitle" placeholder="z.B. Video-Titel oder Artikel-Überschrift">
+      <label>Titel <span class="optional">(optional)</span></label>
+      <input type="text" id="dumpTitle" placeholder="Wird automatisch ermittelt">
       <button id="dumpBtn" onclick="submitDump()">📥 Einsenden</button>
       <div id="dumpFeedback" class="dump-feedback"></div>
+      <div id="dumpResults" class="dump-results"></div>
     </div>
   </div>
 </div>
@@ -716,6 +759,7 @@ async function loadEntries() {
       return `<div class="entry-card">
         <div class="meta">
           <span class="source-badge ${e.source_type}">${e.source_type}</span>
+          ${e.language ? `<span class="lang-badge" style="font-size:0.75rem;padding:0.05rem 0.4rem;border-radius:3px;background:rgba(6,182,212,0.15);color:var(--cyan);text-transform:uppercase;">${e.language}</span>` : ''}
           <span>${e.author || 'Unbekannt'}</span>
           <span>${e.published_at ? new Date(e.published_at).toLocaleDateString('de-DE') : ''}</span>
         </div>
@@ -784,6 +828,7 @@ async function loadYoutubeGallery() {
           <div class="yt-title">${escapeHtml(e.title || 'Kein Titel')}</div>
           <div class="yt-meta">
             <span class="yt-badge">YouTube</span>
+            ${e.language ? `<span style="font-size:0.7rem;padding:0.05rem 0.35rem;border-radius:3px;background:rgba(6,182,212,0.15);color:var(--cyan);text-transform:uppercase;">${e.language}</span>` : ''}
             ${channel ? '<span class="yt-channel">' + escapeHtml(channel) + '</span>' : ''}
             ${date ? '<span>' + date + '</span>' : ''}
           </div>
@@ -798,45 +843,85 @@ async function loadYoutubeGallery() {
 // --- Dump ---
 async function submitDump() {
   const btn = document.getElementById('dumpBtn');
-  const url = document.getElementById('dumpUrl').value.trim();
+  const textarea = document.getElementById('dumpUrls');
   const type = document.getElementById('dumpType').value;
   const title = document.getElementById('dumpTitle').value.trim();
   const feedback = document.getElementById('dumpFeedback');
+  const results = document.getElementById('dumpResults');
 
-  if (!url) {
+  // Split textarea into URLs, one per line, trim whitespace, filter empty
+  const urls = textarea.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+
+  if (urls.length === 0) {
     feedback.className = 'dump-feedback error';
-    feedback.textContent = '⚠️ Bitte gib eine URL ein.';
+    feedback.textContent = '⚠️ Bitte gib mindestens eine URL ein.';
     return;
   }
 
   btn.disabled = true;
-  btn.textContent = '⏳ Wird verarbeitet …';
+  btn.textContent = '⏳ Verarbeite ' + urls.length + ' URL(s) …';
+  feedback.className = '';
+  feedback.textContent = '';
+  results.className = 'dump-results show';
+  results.innerHTML = '';
 
-  try {
-    const res = await fetch(API + '/api/entries', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, source_type: type, title })
-    });
-    const data = await res.json();
-    if (res.ok) {
-      feedback.className = 'dump-feedback success';
-      feedback.textContent = data.message === 'Eintrag existiert bereits'
-        ? 'ℹ️ Dieser Eintrag ist bereits vorhanden.'
-        : '✅ Eintrag erfolgreich eingesendet! (ID: ' + (data.id || '') + ')';
-      document.getElementById('dumpUrl').value = '';
-      document.getElementById('dumpTitle').value = '';
-    } else {
-      feedback.className = 'dump-feedback error';
-      feedback.textContent = '⚠️ ' + (data.error || 'Unbekannter Fehler');
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'dump-result-item';
+    itemDiv.textContent = `⏳ #${i + 1}: ${url.slice(0, 60)}${url.length > 60 ? '…' : ''}`;
+    results.appendChild(itemDiv);
+
+    try {
+      const res = await fetch(API + '/api/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, source_type: type || undefined, title: title || undefined })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        if (data.message === 'Eintrag existiert bereits') {
+          itemDiv.className = 'dump-result-item duplicate';
+          itemDiv.textContent = `ℹ️ #${i + 1}: Bereits vorhanden — ${url.slice(0, 60)}${url.length > 60 ? '…' : ''}`;
+        } else {
+          itemDiv.className = 'dump-result-item success';
+          itemDiv.textContent = `✅ #${i + 1}: Erstellt (ID: ${data.id}) — ${url.slice(0, 60)}${url.length > 60 ? '…' : ''}`;
+          successCount++;
+        }
+      } else {
+        itemDiv.className = 'dump-result-item error';
+        itemDiv.textContent = `❌ #${i + 1}: ${data.error || 'Fehler'} — ${url.slice(0, 60)}${url.length > 60 ? '…' : ''}`;
+        errorCount++;
+      }
+    } catch (err) {
+      itemDiv.className = 'dump-result-item error';
+      itemDiv.textContent = `❌ #${i + 1}: Netzwerkfehler — ${url.slice(0, 60)}${url.length > 60 ? '…' : ''}`;
+      errorCount++;
     }
-  } catch (err) {
-    feedback.className = 'dump-feedback error';
-    feedback.textContent = '⚠️ Netzwerkfehler: ' + err.message;
   }
+
+  // Summary
+  const total = urls.length;
+  feedback.className = 'dump-feedback ' + (errorCount === 0 ? 'success' : 'error');
+  feedback.textContent = errorCount === 0
+    ? `✅ Alle ${total} URL(s) erfolgreich eingesendet!`
+    : `⚠️ ${successCount} von ${total} URL(s) erfolgreich, ${errorCount} Fehler`;
 
   btn.disabled = false;
   btn.textContent = '📥 Einsenden';
+
+  // Clear on full success
+  if (errorCount === 0) {
+    textarea.value = '';
+    document.getElementById('dumpTitle').value = '';
+  }
+
+  // Refresh entry list
+  loadEntries();
 }
 
 // --- YouTube Gallery ---
@@ -940,6 +1025,7 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
 
   // Meta row
   let metaHtml = `<div class="modal-meta">${sourceBadge}`;
+  if (entry.language) metaHtml += `<span style="font-size:0.75rem;padding:0.05rem 0.4rem;border-radius:3px;background:rgba(6,182,212,0.15);color:var(--cyan);text-transform:uppercase;">${entry.language}</span>`;
   if (entry.author) metaHtml += `<span style="color:var(--text-dim);font-size:0.85rem;">${entry.author}</span>`;
   if (entry.published_at) metaHtml += `<span style="color:var(--text-dim);font-size:0.85rem;">${new Date(entry.published_at).toLocaleDateString('de-DE')}</span>`;
   if (relevanceStars) metaHtml += `<span style="color:var(--orange);font-size:0.9rem;">${relevanceStars}</span>`;

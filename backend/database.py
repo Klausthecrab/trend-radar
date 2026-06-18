@@ -2,6 +2,7 @@
 """Trend-Radar: SQLite database setup and helpers."""
 
 import json
+import os
 import sqlite3
 import time
 from datetime import datetime
@@ -9,7 +10,8 @@ from pathlib import Path
 
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
-DB_PATH = ROOT / "data" / "trend-radar.db"
+DATA_DIR = Path(os.environ.get('TREND_DATA_DIR', str(ROOT / "data")))
+DB_PATH = DATA_DIR / "trend-radar.db"
 
 
 def get_db():
@@ -45,6 +47,9 @@ def migrate_db():
     if "thumbnail_url" not in existing:
         conn.execute("ALTER TABLE entries ADD COLUMN thumbnail_url TEXT")
         print("📦 Migration: thumbnail_url hinzugefügt")
+    if "language" not in existing:
+        conn.execute("ALTER TABLE entries ADD COLUMN language TEXT DEFAULT 'de'")
+        print("📦 Migration: language hinzugefügt")
     conn.commit()
     conn.close()
 

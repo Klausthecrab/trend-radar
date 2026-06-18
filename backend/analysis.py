@@ -24,39 +24,73 @@ SOURCE_PREFIXES = {
 }
 
 
-def analyze_with_llm(title: str, content: str, source_type: str) -> dict:
+def analyze_with_llm(title: str, content: str, source_type: str, language: str = "de") -> dict:
     """Send title + content to Venice Chat API for structured analysis.
 
     Returns: {relevance, summary, topics: [{name, what_is, homelab_value, hermi_value}]}
     """
+    is_german = language == "de"
+    prompt_lang = "DE" if is_german else "EN"
+    analysis_instruction = (
+        "Analysiere den Inhalt und antworte NUR mit einem JSON-Objekt, keinem anderen Text:"
+        if is_german else
+        "Analyze the content and respond ONLY with a JSON object, no other text:"
+    )
+    summary_field = (
+        "\"summary\": \"<1-3 Sätze Zusammenfassung auf Deutsch>\""
+        if is_german else
+        "\"summary\": \"<1-3 sentence summary in English>\""
+    )
+    topic_field_names = (
+        "\"what_is\": \"<Erklärung: Was ist das? Wofür wird es genutzt?>\","
+        "\"homelab_value\": \"<Mehrwert für das Homelab auf Butler — warum relevant, worauf achten>\","
+        "\"hermi_value\": \"<Mehrwert für Hermi/KI-Systeme — was können wir damit machen?>\""
+        if is_german else
+        "\"what_is\": \"<Explanation: What is it? What is it used for?>\","
+        "\"homelab_value\": \"<Value for the homelab on Butler — why relevant, things to watch out for>\","
+        "\"hermi_value\": \"<Value for Hermi/AI systems — what can we do with it?>\""
+    )
+    relevance_rules = (
+        "- relevance: 1=nicht relevant, 2=Randnotiz, 3=interessant, 4=sollte man anschauen, 5=sofort testen"
+        if is_german else
+        "- relevance: 1=not relevant, 2=side note, 3=interesting, 4=worth checking out, 5=test immediately"
+    )
+    other_rules = (
+        "- topics: max 3 Themen aus dem Inhalt\n"
+        "- Jedes Thema hat eine Erklärung WAS es ist, WOFÜR es im Homelab gut ist und WAS Hermi/KI damit anfangen kann\n"
+        "- Keine ToDo-Listen, keine Checkboxen, keine Handlungsaufforderungen\n"
+        "- Nur Erklärung und Bewertung"
+        if is_german else
+        "- topics: max 3 topics from the content\n"
+        "- Each topic explains WHAT it is, WHY it's useful in the homelab, and WHAT Hermi/AI can do with it\n"
+        "- No todo lists, no checkboxes, no action prompts\n"
+        "- Explanations and evaluation only"
+    )
+
     prompt = f"""Du analysierst Tech-Inhalte für ein Homelab-Setup (Linux-Server, Docker, Self-Hosting, KI-Tools).
 
-**Quelle:** {source_type}
-**Titel:** {title}
-**Inhalt:**
+**Quelle/Source:** {source_type}
+**Sprache/Language:** {prompt_lang}
+**Titel/Title:** {title}
+**Inhalt/Content:**
 {content[:4000]}
 
-Analysiere den Inhalt und antworte NUR mit einem JSON-Objekt, keinem anderen Text:
+{analysis_instruction}
 
 {{
   "relevance": <1-5>,
-  "summary": "<1-3 Sätze Zusammenfassung auf Deutsch>",
+  {summary_field},
   "topics": [
     {{
-      "name": "<Name der Technologie / des Themas>",
-      "what_is": "<Erklärung: Was ist das? Wofür wird es genutzt?>",
-      "homelab_value": "<Mehrwert für das Homelab auf Butler — warum relevant, worauf achten>",
-      "hermi_value": "<Mehrwert für Hermi/KI-Systeme — was können wir damit machen?>"
+      "name": "<Name der Technologie / des Themas oder Technology/Topic name>",
+      {topic_field_names}
     }}
   ]
 }}
 
-Regeln:
-- relevance: 1=nicht relevant, 2=Randnotiz, 3=interessant, 4=sollte man anschauen, 5=sofort testen
-- topics: max 3 Themen aus dem Inhalt
-- Jedes Thema hat eine Erklärung WAS es ist, WOFÜR es im Homelab gut ist und WAS Hermi/KI damit anfangen kann
-- Keine ToDo-Listen, keine Checkboxen, keine Handlungsaufforderungen
-- Nur Erklärung und Bewertung"""
+Regeln/Rules:
+{relevance_rules}
+{other_rules}"""
 
     if not VENICE_KEY:
         print("⚠️  Kein Venice API-Key — LLM-Analyse deaktiviert")
@@ -137,13 +171,15 @@ def generate_obsidian_note(entry: dict, analysis: dict) -> str | None:
     topics = analysis.get("topics", [])
 
     # Build content
+    lang_tag = entry.get("language", "de")
     content = f"""---
 title: {display_title}
 source: {source_type}
 url: {url}
 relevance: {relevance}/5
+language: {lang_tag}
 created: {today}
-tags: [trend-radar, {source_type}]
+tags: [trend-radar, {source_type}, {lang_tag}]
 ---
 
 # {display_title}

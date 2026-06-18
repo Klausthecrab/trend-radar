@@ -35,13 +35,13 @@ if not VENICE_KEY:
 
 
 def get_youtube_metadata(url: str) -> dict:
-    """Extrahiere Thumbnail-URL + Channel via yt-dlp --print (schnell, kein Download)."""
+    """Extrahiere Thumbnail-URL + Channel + Sprache via yt-dlp --print (schnell, kein Download)."""
     print(f"📋 Hole YouTube-Metadaten: {url}")
-    meta = {"thumbnail_url": None, "channel": None}
+    meta = {"thumbnail_url": None, "channel": None, "language": None}
     try:
         result = subprocess.run(
             ["yt-dlp", "--print", "thumbnail", "--print", "channel", "--print", "channel_url",
-             "--print", "duration_string", url],
+             "--print", "duration_string", "--print", "language", url],
             capture_output=True, text=True, timeout=30
         )
         if result.returncode == 0:
@@ -50,8 +50,11 @@ def get_youtube_metadata(url: str) -> dict:
                 meta["thumbnail_url"] = lines[0]
             if len(lines) >= 2 and lines[1]:
                 meta["channel"] = lines[1]
+            if len(lines) >= 5 and lines[4] and lines[4] not in ("None", "na", "un"):
+                meta["language"] = lines[4][:2].lower()  # 'de' or 'en' or 'None'
             print(f"   🖼️ Thumbnail: {meta['thumbnail_url']}")
             print(f"   📺 Channel: {meta['channel']}")
+            print(f"   🌐 Sprache: {meta['language'] or 'unbekannt'}")
         else:
             print(f"⚠️  yt-dlp metadata Fehler: {result.stderr[:200]}")
     except Exception as e:
@@ -113,9 +116,9 @@ def download_youtube_audio(url: str) -> str | None:
         return None
 
 
-def transcribe_audio(audio_path: str) -> str | None:
-    """Send audio to Venice STT, return transcript text."""
-    print(f"🎤 Transkribiere: {audio_path}")
+def transcribe_audio(audio_path: str, language: str | None = None) -> str | None:
+    """Send audio to Venice STT, return transcript text. Optionally pass language hint."""
+    print(f"🎤 Transkribiere: {audio_path} (Sprache: {language or 'auto'})")
     try:
         import httpx
     except ImportError:
@@ -130,6 +133,8 @@ def transcribe_audio(audio_path: str) -> str | None:
                     "model": "nvidia/parakeet-tdt-0.6b-v3",
                     "response_format": "json",
                 }
+                if language:
+                    data["language"] = language
                 resp = client.post(
                     VENICE_API,
                     headers={"Authorization": f"Bearer {VENICE_KEY}"},
@@ -196,10 +201,10 @@ def _transcribe_urllib(audio_path: str) -> str | None:
         return None
 
 
-def analyze_entry(title: str, content: str, source_type: str, entry_id: int = None) -> dict | None:
+def analyze_entry(title: str, content: str, source_type: str, language: str = "de", entry_id: int = None) -> dict | None:
     """Analyze an entry using Venice LLM. Returns {relevance, summary, takeaways, action_items, obsidian_note}."""
-    print(f"🔍 LLM-Analyse für: {title[:60]}...")
-    analysis = analyze_with_llm(title, content, source_type)
+    print(f"🔍 LLM-Analyse für: {title[:60]}... (Sprache: {language})")
+    analysis = analyze_with_llm(title, content, source_type, language=language)
     if not analysis:
         print("⚠️  LLM-Analyse fehlgeschlagen, verwende Platzhalter")
         return {
@@ -214,16 +219,18 @@ def analyze_entry(title: str, content: str, source_type: str, entry_id: int = No
 def process_youtube(url: str, title: str = "", entry_id: int | None = None) -> dict:
     """Full pipeline: get metadata → download YouTube audio → transcribe → analyze."""
     result = {"status": "pending", "url": url, "title": title,
-              "transcript": None, "analysis": None, "thumbnail_url": None, "channel": None}
+              "transcript": None, "analysis": None, "thumbnail_url": None, "channel": None, "language": None}
 
     print(f"\n{'='*50}")
     print(f"🎬 Verarbeite YouTube: {url}")
     _update_step(entry_id, "extracting")
 
-    # Step 0: Get metadata (thumbnail, channel)
+    # Step 0: Get metadata (thumbnail, channel, language)
     meta = get_youtube_metadata(url)
     result["thumbnail_url"] = meta["thumbnail_url"]
     result["channel"] = meta["channel"]
+    video_language = meta.get("language") or "de"  # default: Deutsch
+    result["language"] = video_language
     audio_path = download_youtube_audio(url)
     if not audio_path:
         result["status"] = "error"
@@ -232,7 +239,7 @@ def process_youtube(url: str, title: str = "", entry_id: int | None = None) -> d
 
     # Step 2: Transcribe
     _update_step(entry_id, "transcribing")
-    transcript = transcribe_audio(audio_path)
+    transcript = transcribe_audio(audio_path, language=video_language)
     try:
         os.unlink(audio_path)
     except OSError:
@@ -248,7 +255,7 @@ def process_youtube(url: str, title: str = "", entry_id: int | None = None) -> d
 
     # Step 3: Analyze
     _update_step(entry_id, "analyzing")
-    analysis = analyze_entry(title or url, transcript, "youtube", entry_id=None)
+    analysis = analyze_entry(title or url, transcript, "youtube", language=video_language, entry_id=None)
     result["analysis"] = analysis
     result["status"] = "analyzed"
 
@@ -256,7 +263,8 @@ def process_youtube(url: str, title: str = "", entry_id: int | None = None) -> d
     if analysis:
         _update_step(entry_id, "note")
         note_path = generate_obsidian_note(
-            {"id": "?", "title": title or url, "url": url, "source_type": "youtube"},
+            {"id": "?", "title": title or url, "url": url,
+             "source_type": "youtube", "language": video_language},
             analysis
         )
         if note_path:
