@@ -10,8 +10,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, DB_PATH
-from pipeline import process_url
-from scanner import scan_all_sources
+from trilium import RESOURCES_NOTE_ID, get_resources_structure, format_structure_for_llm
 
 def _detect_source_type(url: str) -> str:
     """Detect source type from URL."""
@@ -133,6 +132,130 @@ def _preanalyze_entry(entry_id: int):
         db.close()
 
 
+def _analyze_and_suggest(entry_id: int, entry: dict):
+    """Background job: run LLM analysis + Trilium path suggestion.
+    
+    For YouTube: full pipeline (download → transcribe → analyze → suggest path)
+    For non-YouTube: fetch page content → analyze → suggest path
+    """
+    from database import get_db
+    from analysis import analyze_with_llm, suggest_trilium_path
+    import re
+    
+    url = entry["url"]
+    source_type = entry["source_type"]
+    title = entry.get("title", "") or ""
+    language = entry.get("language", "de")
+    
+    print(f"🧵 Starte Analyse für Entry #{entry_id}: {url[:60]}...")
+    set_processing_step(entry_id, "analyzing")
+    
+    content = None
+    analysis = None
+    
+    if source_type == "youtube" or "youtube.com" in url or "youtu.be" in url:
+        # YouTube: full pipeline
+        from pipeline import process_youtube
+        result = process_youtube(url, title, entry_id)
+        if result.get("status") == "error":
+            print(f"⚠️  YouTube-Pipeline fehlgeschlagen für #{entry_id}: {result.get('error')}")
+            db = get_db()
+            db.execute("UPDATE entries SET status = 'failed' WHERE id = ?", (entry_id,))
+            db.commit()
+            db.close()
+            set_processing_step(entry_id, None)
+            return
+        
+        content = result.get("transcript", "")
+        analysis = result.get("analysis")
+        thumbnail = result.get("thumbnail_url")
+        channel = result.get("channel")
+        lang = result.get("language", language)
+        
+        # Store in DB
+        db = get_db()
+        db.execute("UPDATE entries SET content = ?, language = ?, thumbnail_url = ?, author = ? WHERE id = ?",
+                    (content, lang, thumbnail, channel, entry_id))
+        db.commit()
+        db.close()
+    else:
+        # Non-YouTube: fetch page and extract text
+        import urllib.request
+        print(f"🌐 Fetching page content: {url[:60]}...")
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+            
+            # Simple HTML-to-text: strip tags, keep text
+            text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.I)
+            text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.I)
+            text = re.sub(r'<[^>]+>', ' ', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+            content = text[:4000]  # Cap at 4000 chars
+            
+            print(f"   📄 Extrahiert: {len(content)} Zeichen Content")
+            
+            # Store content in DB
+            db = get_db()
+            db.execute("UPDATE entries SET content = ? WHERE id = ?", (content, entry_id))
+            db.commit()
+            db.close()
+        except Exception as e:
+            print(f"⚠️  Page-Fetch Fehler für #{entry_id}: {e}")
+            content = None
+    
+    # Step 2: LLM Analysis
+    if content and not analysis:
+        analysis = analyze_with_llm(title, content, source_type, language=language)
+    
+    if analysis:
+        # Store analysis in DB
+        db = get_db()
+        db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
+                   (json.dumps(analysis), entry_id))
+        db.commit()
+        db.close()
+        print(f"✅ Analyse abgeschlossen für #{entry_id}: Relevanz {analysis.get('relevance', '?')}/5")
+    else:
+        print(f"⚠️  Keine Analyse für #{entry_id} — kein Content verfügbar")
+        db = get_db()
+        db.execute("UPDATE entries SET status = 'failed' WHERE id = ?", (entry_id,))
+        db.commit()
+        db.close()
+        set_processing_step(entry_id, None)
+        return
+    
+    # Step 3: Trilium path suggestion
+    print(f"🗺️  Ermittle Trilium-Pfad für #{entry_id}...")
+    try:
+        tree = get_resources_structure()
+        structure_str = format_structure_for_llm(tree)
+        path_suggestion = suggest_trilium_path(title, analysis, structure_str, language=language)
+        
+        if path_suggestion:
+            db = get_db()
+            db.execute(
+                "UPDATE entries SET trilium_suggested_path = ?, trilium_target_note_id = ? WHERE id = ?",
+                (path_suggestion.get("path", ""), path_suggestion.get("noteId", ""), entry_id)
+            )
+            db.commit()
+            db.close()
+            print(f"✅ Trilium-Pfad: {path_suggestion.get('path', '📚 Resources')}")
+    except Exception as e:
+        print(f"⚠️  Trilium-Pfad-Fehler für #{entry_id}: {e}")
+    
+    # Set status to analyzed
+    db = get_db()
+    db.execute("UPDATE entries SET status = 'analyzed', processing_step = NULL WHERE id = ?", (entry_id,))
+    db.commit()
+    db.close()
+    print(f"✅ Entry #{entry_id} ist bereit für Trilium-Ablage")
+
+
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
 FRONTEND = ROOT / "frontend"
@@ -168,6 +291,17 @@ class Handler(SimpleHTTPRequestHandler):
         # --- API Routes ---
         if path == "/api/health":
             self._send_json({"status": "ok", "port": PORT})
+            return
+
+        if path == "/api/stats":
+            db = get_db()
+            total = db.execute("SELECT COUNT(*) as cnt FROM entries").fetchone()["cnt"]
+            unread = db.execute("SELECT COUNT(*) as cnt FROM entries WHERE status='new' OR status='pre_analyzed'").fetchone()["cnt"]
+            analyzed = db.execute("SELECT COUNT(*) as cnt FROM entries WHERE status='analyzed'").fetchone()["cnt"]
+            filed = db.execute("SELECT COUNT(*) as cnt FROM entries WHERE status='filed'").fetchone()["cnt"]
+            failed = db.execute("SELECT COUNT(*) as cnt FROM entries WHERE status='failed'").fetchone()["cnt"]
+            db.close()
+            self._send_json({"total": total, "unread": unread, "analyzed": analyzed, "filed": filed, "failed": failed})
             return
 
         # /api/entries/:id (must come before /api/entries exact match due to routing order)
@@ -223,27 +357,60 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(entries)
             return
 
-        if path == "/api/sources":
-            db = get_db()
-            rows = db.execute("SELECT * FROM sources ORDER BY name").fetchall()
-            db.close()
-            self._send_json([dict(r) for r in rows])
-            return
+        # --- Playlist API (GET) ---
+        # /api/playlists/:id/videos (must come before /api/playlists/:id)
+        if path.startswith("/api/playlists/") and path.endswith("/videos"):
+            parts = path.split("/")
+            if len(parts) == 5:
+                playlist_id = parts[3]
+                status_filter = params.get("status", [None])[0]
+                db = get_db()
+                query = "SELECT * FROM playlist_videos WHERE playlist_id = ?"
+                args = [playlist_id]
+                if status_filter:
+                    query += " AND status = ?"
+                    args.append(status_filter)
+                query += " ORDER BY published_at DESC, created_at DESC"
+                rows = db.execute(query, args).fetchall()
+                db.close()
+                self._send_json([dict(r) for r in rows])
+                return
 
-        if path == "/api/scan/status":
+        # /api/playlists/:id
+        if path.startswith("/api/playlists/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                playlist_id = parts[3]
+                db = get_db()
+                row = db.execute("SELECT * FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+                if not row:
+                    db.close()
+                    self._send_json({"error": "Not Found"}, 404)
+                    return
+                playlist = dict(row)
+                # Add video counts
+                counts = db.execute("""
+                    SELECT status, COUNT(*) as cnt FROM playlist_videos
+                    WHERE playlist_id = ? GROUP BY status
+                """, (playlist_id,)).fetchall()
+                playlist["video_counts"] = {r["status"]: r["cnt"] for r in counts}
+                db.close()
+                self._send_json(playlist)
+                return
+
+        if path == "/api/playlists":
             db = get_db()
-            row = db.execute(
-                "SELECT created_at as last_scan FROM sources ORDER BY last_scanned_at DESC LIMIT 1"
-            ).fetchone()
-            count = db.execute("SELECT COUNT(*) as total FROM entries").fetchone()["total"]
-            unread = db.execute("SELECT COUNT(*) as cnt FROM entries WHERE status='unread'").fetchone()["cnt"]
+            rows = db.execute("SELECT * FROM playlists ORDER BY created_at DESC").fetchall()
+            playlists = [dict(r) for r in rows]
+            # Add video counts per playlist
+            for p in playlists:
+                counts = db.execute("""
+                    SELECT status, COUNT(*) as cnt FROM playlist_videos
+                    WHERE playlist_id = ? GROUP BY status
+                """, (p["id"],)).fetchall()
+                p["video_counts"] = {r["status"]: r["cnt"] for r in counts}
             db.close()
-            self._send_json({
-                "last_scan": row["last_scan"] if row else None,
-                "total_entries": count,
-                "unread_entries": unread,
-                "next_scan": "Noch kein Cron-Scanner aktiv",
-            })
+            self._send_json(playlists)
             return
 
         # --- CIO API ---
@@ -315,31 +482,343 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(e)}, 500)
             return
 
-        if path == "/api/sources":
+        # POST /api/entries/:id/analyze — LLM-Analyse starten (nur pre_analyzed)
+        if path.startswith("/api/entries/") and path.endswith("/analyze"):
+            parts = path.split("/")
+            if len(parts) == 5:
+                entry_id = parts[3]
+                db = get_db()
+                row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                db.close()
+                if not row:
+                    self._send_json({"error": "Entry not found"}, 404)
+                    return
+                entry = dict(row)
+                if entry["status"] not in ("pre_analyzed", "new"):
+                    self._send_json({"error": f"Analyse nur für pre_analyzed/new möglich, aktuell: {entry['status']}"}, 400)
+                    return
+
+                def _run_analysis(entry_id: int, entry: dict):
+                    _analyze_and_suggest(entry_id, entry)
+
+                threading.Thread(target=_run_analysis, args=(entry_id, entry), daemon=True).start()
+                self._send_json({"message": "Analyse gestartet"})
+                return
+
+        # POST /api/entries/:id/trilium — In Trilium ablegen
+        if path.startswith("/api/entries/") and path.endswith("/trilium"):
+            parts = path.split("/")
+            if len(parts) == 5:
+                entry_id = parts[3]
+                db = get_db()
+                row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                db.close()
+                if not row:
+                    self._send_json({"error": "Entry not found"}, 404)
+                    return
+                entry = dict(row)
+                if entry["status"] != "analyzed":
+                    self._send_json({"error": f"Ablage nur für analyzed möglich, aktuell: {entry['status']}"}, 400)
+                    return
+
+                target_note_id = entry.get("trilium_target_note_id") or RESOURCES_NOTE_ID
+                analysis = entry.get("analysis")
+                if analysis:
+                    try:
+                        analysis = json.loads(analysis)
+                    except (json.JSONDecodeError, TypeError):
+                        analysis = {}
+
+                from trilium import create_trilium_note
+                result = create_trilium_note(entry, analysis, target_note_id)
+
+                if result["status"] == "ok":
+                    db = get_db()
+                    db.execute(
+                        "UPDATE entries SET status = 'filed', trilium_note_id = ?, processing_step = NULL WHERE id = ?",
+                        (result.get("note_id", ""), entry_id)
+                    )
+                    db.commit()
+                    db.close()
+                    self._send_json({
+                        "status": "filed",
+                        "note_id": result["note_id"],
+                        "path": result["path"],
+                        "message": f"📂 Abgelegt unter: {result['path']}"
+                    })
+                else:
+                    db = get_db()
+                    db.execute("UPDATE entries SET status = 'failed' WHERE id = ?", (entry_id,))
+                    db.commit()
+                    db.close()
+                    self._send_json({
+                        "status": "failed",
+                        "error": result.get("error", "Unbekannter Fehler"),
+                        "message": f"❌ Fehler bei Trilium-Ablage: {result.get('error', 'Unbekannt')}"
+                    }, 500)
+                return
+
+        # --- Playlist API (POST) ---
+
+        # POST /api/playlists — Neue Playlist anlegen
+        if path == "/api/playlists":
             body = self._read_body()
-            required = ["type", "url"]
-            if not all(k in body for k in required):
-                self._send_json({"error": "type and url are required"}, 400)
+            name = body.get("name", "").strip()
+            playlist_url = body.get("playlist_url", "").strip()
+            interval = body.get("check_interval_hours", 24)
+            if not name or not playlist_url:
+                self._send_json({"error": "name and playlist_url are required"}, 400)
                 return
             db = get_db()
-            db.execute(
-                "INSERT INTO sources (type, url, name, interval) VALUES (?, ?, ?, ?)",
-                (body["type"], body["url"], body.get("name", ""), body.get("interval", "daily"))
-            )
-            db.commit()
-            source_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-            db.close()
-            self._send_json({"id": source_id, "message": "Quelle hinzugefügt"}, 201)
+            try:
+                db.execute(
+                    "INSERT INTO playlists (name, playlist_url, check_interval_hours) VALUES (?, ?, ?)",
+                    (name, playlist_url, interval)
+                )
+                db.commit()
+                row = db.execute("SELECT * FROM playlists WHERE playlist_url = ?", (playlist_url,)).fetchone()
+                db.close()
+                self._send_json(dict(row), 201)
+            except Exception as e:
+                db.close()
+                self._send_json({"error": str(e)}, 500)
             return
 
-        if path == "/api/scan/now":
-            # Run scan in background thread so the request returns immediately
-            def _run_scan():
-                result = scan_all_sources()
-                print(f"✅ Scan abgeschlossen: {result['total_new']} neue Einträge")
-            threading.Thread(target=_run_scan, daemon=True).start()
-            self._send_json({"message": "Scan gestartet — läuft im Hintergrund"})
+        # POST /api/playlists/:id/check — Playlist sofort prüfen
+        if path.startswith("/api/playlists/") and path.endswith("/check"):
+            parts = path.split("/")
+            if len(parts) == 5:
+                playlist_id = parts[3]
+                import subprocess
+                db = get_db()
+                pl = db.execute("SELECT * FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+                if not pl:
+                    db.close()
+                    self._send_json({"error": "Not Found"}, 404)
+                    return
+                playlist = dict(pl)
+                url = playlist["playlist_url"]
+                print(f"📋 Checke Playlist #{playlist_id}: {playlist['name']} ({url[:60]}...)")
+                try:
+                    result = subprocess.run(
+                        ["yt-dlp", "--flat-playlist", "--dump-json", url],
+                        capture_output=True, text=True, timeout=60
+                    )
+                    if result.returncode != 0:
+                        db.close()
+                        self._send_json({"error": f"yt-dlp Fehler: {result.stderr[:300]}"}, 500)
+                        return
+
+                    new_count = 0
+                    for line in result.stdout.strip().split("\n"):
+                        if not line.strip():
+                            continue
+                        try:
+                            video = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        video_id = video.get("id", "")
+                        vtitle = video.get("title", "")
+                        channel = video.get("channel", "") or video.get("uploader", "")
+                        thumb = video.get("thumbnail", "")
+                        published = video.get("upload_date", "")
+                        if published and len(published) == 8:
+                            published = f"{published[:4]}-{published[4:6]}-{published[6:8]}"
+
+                        try:
+                            db.execute(
+                                """INSERT OR IGNORE INTO playlist_videos
+                                   (playlist_id, video_id, title, channel, thumbnail_url, published_at)
+                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                (playlist_id, video_id, vtitle, channel, thumb, published)
+                            )
+                            if db.total_changes > 0:
+                                new_count += 1
+                        except Exception:
+                            pass
+
+                    # Update last_checked_at
+                    from datetime import datetime
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    db.execute("UPDATE playlists SET last_checked_at = ? WHERE id = ?",
+                               (now, playlist_id))
+                    db.commit()
+                    db.close()
+
+                    print(f"✅ Playlist #{playlist_id} gecheckt: {new_count} neue Videos")
+                    self._send_json({
+                        "message": f"Playlist gecheckt: {new_count} neue Videos",
+                        "new_count": new_count,
+                        "last_checked_at": now
+                    })
+                except subprocess.TimeoutExpired:
+                    db.close()
+                    self._send_json({"error": "yt-dlp timeout (60s)"}, 500)
+                except Exception as e:
+                    db.close()
+                    self._send_json({"error": str(e)}, 500)
+                return
+
+        # POST /api/playlists/:id/videos/:vid/dismiss — Video ignorieren
+        if path.startswith("/api/playlists/") and "/videos/" in path and path.endswith("/dismiss"):
+            parts = path.split("/")
+            if len(parts) == 7 and parts[4] == "videos" and parts[6] == "dismiss":
+                playlist_id, video_id = parts[3], parts[5]
+                db = get_db()
+                db.execute(
+                    "UPDATE playlist_videos SET status = 'dismissed' WHERE playlist_id = ? AND video_id = ?",
+                    (playlist_id, video_id)
+                )
+                db.commit()
+                db.close()
+                self._send_json({"message": "Video dismissed", "status": "dismissed"})
+                return
+
+        # POST /api/playlists/:id/videos/:vid/add — Video als Eintrag übernehmen
+        if path.startswith("/api/playlists/") and "/videos/" in path and path.endswith("/add"):
+            parts = path.split("/")
+            if len(parts) == 7 and parts[4] == "videos" and parts[6] == "add":
+                playlist_id, video_id = parts[3], parts[5]
+                db = get_db()
+                vid_row = db.execute(
+                    "SELECT * FROM playlist_videos WHERE playlist_id = ? AND video_id = ?",
+                    (playlist_id, video_id)
+                ).fetchone()
+                if not vid_row:
+                    db.close()
+                    self._send_json({"error": "Video not found"}, 404)
+                    return
+                vid = dict(vid_row)
+                yt_url = f"https://youtube.com/watch?v={video_id}"
+                existing = db.execute("SELECT id FROM entries WHERE url = ?", (yt_url,)).fetchone()
+                if existing:
+                    entry_id = existing["id"]
+                    db.execute(
+                        "UPDATE playlist_videos SET status = 'added', entry_id = ? WHERE id = ?",
+                        (entry_id, vid["id"])
+                    )
+                    db.commit()
+                    db.close()
+                    self._send_json({"id": entry_id, "message": "Eintrag existiert bereits, verlinkt"})
+                    return
+
+                title = vid.get("title", "")
+                channel = vid.get("channel", "")
+                thumb = vid.get("thumbnail_url", "")
+                published = vid.get("published_at", "")
+                db.execute(
+                    """INSERT INTO entries (source_type, url, title, author, thumbnail_url,
+                       published_at, status) VALUES ('youtube', ?, ?, ?, ?, ?, 'new')""",
+                    (yt_url, title, channel, thumb, published)
+                )
+                db.commit()
+                entry_row = db.execute("SELECT id FROM entries WHERE url = ?", (yt_url,)).fetchone()
+                entry_id = entry_row["id"] if entry_row else None
+
+                if entry_id:
+                    db.execute(
+                        "UPDATE playlist_videos SET status = 'added', entry_id = ? WHERE id = ?",
+                        (entry_id, vid["id"])
+                    )
+                    db.commit()
+                    threading.Thread(
+                        target=_preanalyze_entry,
+                        args=(entry_id,),
+                        daemon=True
+                    ).start()
+
+                db.close()
+                self._send_json({
+                    "id": entry_id,
+                    "status": "added",
+                    "message": f"Video als Eintrag #{entry_id} übernommen, Pre-Analyse gestartet"
+                }, 201)
+                return
+
+        # POST /api/playlists/bulk/add — Mehrere Videos auf einmal übernehmen
+        if path == "/api/playlists/bulk/add":
+            body = self._read_body()
+            items = body.get("items", [])
+            if not items:
+                self._send_json({"error": "items array is required"}, 400)
+                return
+            results = []
+            db = get_db()
+            for item in items:
+                pl_id = item.get("playlist_id")
+                v_id = item.get("video_id")
+                if not pl_id or not v_id:
+                    results.append({"playlist_id": pl_id, "video_id": v_id, "status": "error", "error": "Missing fields"})
+                    continue
+                vid_row = db.execute(
+                    "SELECT * FROM playlist_videos WHERE playlist_id = ? AND video_id = ?",
+                    (pl_id, v_id)
+                ).fetchone()
+                if not vid_row:
+                    results.append({"playlist_id": pl_id, "video_id": v_id, "status": "error", "error": "Video not found"})
+                    continue
+                vid = dict(vid_row)
+                yt_url = f"https://youtube.com/watch?v={v_id}"
+                existing = db.execute("SELECT id FROM entries WHERE url = ?", (yt_url,)).fetchone()
+                if existing:
+                    db.execute(
+                        "UPDATE playlist_videos SET status = 'added', entry_id = ? WHERE id = ?",
+                        (existing["id"], vid["id"])
+                    )
+                    results.append({"playlist_id": pl_id, "video_id": v_id, "status": "exists", "entry_id": existing["id"]})
+                    continue
+                db.execute(
+                    """INSERT INTO entries (source_type, url, title, author, thumbnail_url,
+                       published_at, status) VALUES ('youtube', ?, ?, ?, ?, ?, 'new')""",
+                    (yt_url, vid.get("title",""), vid.get("channel",""), vid.get("thumbnail_url",""), vid.get("published_at",""))
+                )
+                db.commit()
+                erow = db.execute("SELECT id FROM entries WHERE url = ?", (yt_url,)).fetchone()
+                eid = erow["id"] if erow else None
+                if eid:
+                    db.execute(
+                        "UPDATE playlist_videos SET status = 'added', entry_id = ? WHERE id = ?",
+                        (eid, vid["id"])
+                    )
+                    threading.Thread(target=_preanalyze_entry, args=(eid,), daemon=True).start()
+                    results.append({"playlist_id": pl_id, "video_id": v_id, "status": "added", "entry_id": eid})
+            db.commit()
+            db.close()
+            self._send_json({"results": results, "total": len(results)}, 201)
             return
+
+        self._send_json({"error": "Not Found"}, 404)
+
+    def do_PUT(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        # PUT /api/playlists/:id — Playlist bearbeiten
+        if path.startswith("/api/playlists/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                playlist_id = parts[3]
+                body = self._read_body()
+                db = get_db()
+                row = db.execute("SELECT * FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+                if not row:
+                    db.close()
+                    self._send_json({"error": "Not Found"}, 404)
+                    return
+                name = body.get("name", "").strip()
+                playlist_url = body.get("playlist_url", "").strip()
+                interval = body.get("check_interval_hours")
+                if name:
+                    db.execute("UPDATE playlists SET name = ? WHERE id = ?", (name, playlist_id))
+                if playlist_url:
+                    db.execute("UPDATE playlists SET playlist_url = ? WHERE id = ?", (playlist_url, playlist_id))
+                if interval is not None:
+                    db.execute("UPDATE playlists SET check_interval_hours = ? WHERE id = ?", (interval, playlist_id))
+                db.commit()
+                updated = db.execute("SELECT * FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+                db.close()
+                self._send_json(dict(updated))
+                return
 
         self._send_json({"error": "Not Found"}, 404)
 
@@ -370,80 +849,28 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        if path.startswith("/api/sources/"):
+        # DELETE /api/playlists/:id — Playlist entfernen
+        if path.startswith("/api/playlists/"):
             parts = path.split("/")
             if len(parts) == 4:
-                source_id = parts[3]
+                playlist_id = parts[3]
                 db = get_db()
-                db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+                # Videos werden per CASCADE gelöscht
+                db.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
                 db.commit()
+                deleted = db.total_changes > 0
                 db.close()
-                self._send_json({"message": "Quelle gelöscht"})
+                if deleted:
+                    self._send_json({"message": "Playlist gelöscht"})
+                else:
+                    self._send_json({"error": "Not Found"}, 404)
                 return
 
         self._send_json({"error": "Not Found"}, 404)
 
     def log_message(self, format, *args):
-        print(f"[{time.strftime('%H:%M:%S')}] {args[0]} {args[1]} {args[2]}")
-
-
-def _process_entry_background(entry_id: int, url: str, source_type: str, title: str):
-    """Background worker: run pipeline, update entry with transcript + analysis + Obsidian note."""
-    print(f"🧵 Starte Pipeline für Entry #{entry_id}: {url[:60]}...")
-
-    set_processing_step(entry_id, "downloading")
-    result = process_url(url, source_type, title, entry_id=entry_id)
-
-    if result.get("status") == "error":
-        print(f"⚠️  Pipeline fehlgeschlagen für #{entry_id}: {result.get('error')}")
-        set_processing_step(entry_id, None)  # reset to unread
-        return
-
-    transcript = result.get("transcript")
-    analysis = result.get("analysis")
-    obsidian_note = result.get("obsidian_note")
-    thumbnail_url = result.get("thumbnail_url")
-    channel = result.get("channel")
-    language = result.get("language")
-
-    if not transcript and not analysis:
-        # Not a YouTube URL or nothing extracted — just reset
-        set_processing_step(entry_id, None)
-        return
-
-    set_processing_step(entry_id, "saving")
-    db = get_db()
-    try:
-        if transcript:
-            db.execute("UPDATE entries SET content = ? WHERE id = ?",
-                       (transcript, entry_id))
-        if analysis:
-            db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
-                       (json.dumps(analysis), entry_id))
-        if obsidian_note:
-            db.execute("UPDATE entries SET obsidian_note_path = ? WHERE id = ?",
-                       (obsidian_note, entry_id))
-        if thumbnail_url:
-            db.execute("UPDATE entries SET thumbnail_url = ? WHERE id = ?",
-                       (thumbnail_url, entry_id))
-        if channel:
-            db.execute("UPDATE entries SET author = ? WHERE id = ?",
-                       (channel, entry_id))
-        if language:
-            db.execute("UPDATE entries SET language = ? WHERE id = ?",
-                       (language, entry_id))
-        db.commit()
-        print(f"✅ Pipeline abgeschlossen für Entry #{entry_id}")
-        if thumbnail_url:
-            print(f"   🖼️ Thumbnail: {thumbnail_url[:60]}...")
-        if obsidian_note:
-            print(f"   📝 Obsidian: {obsidian_note}")
-    except Exception as e:
-        print(f"❌ Pipeline-Update fehlgeschlagen für #{entry_id}: {e}")
-    finally:
-        db.close()
-    # Done — reset processing status
-    set_processing_step(entry_id, None)
+        log_str = f"[{time.strftime('%H:%M:%S')}] " + " ".join(str(a) for a in args)
+        print(log_str)
 
 
 def main():

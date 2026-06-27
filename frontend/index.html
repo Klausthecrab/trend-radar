@@ -181,6 +181,9 @@
   .status-badge.read { background: rgba(100,100,100,0.2); color: var(--text-dim); }
   .status-badge.discussed { background: rgba(124,58,237,0.2); color: var(--accent); }
   .status-badge.processing { background: rgba(6,182,212,0.2); color: var(--cyan); animation: pulse 1.5s ease-in-out infinite; }
+  .status-badge.analyzed { background: rgba(6,182,212,0.2); color: var(--cyan); }
+  .status-badge.filed { background: rgba(34,197,94,0.2); color: var(--green); }
+  .status-badge.failed { background: rgba(239,68,68,0.2); color: var(--red); }
 
   .entry-card .relevance {
     display: inline-block;
@@ -524,6 +527,237 @@
     .modal-box { max-height: 90vh; border-radius: 10px; }
     .modal-header, .modal-body, .modal-footer { padding: 1rem; }
   }
+
+  /* ===== Playlist Styles ===== */
+  .playlists-toolbar {
+    margin-bottom: 1.25rem;
+  }
+  .pl-btn {
+    padding: 0.6rem 1.1rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    color: #fff;
+  }
+  .pl-btn:hover { opacity: 0.85; }
+  .pl-btn-primary { background: linear-gradient(135deg, var(--accent), #6d28d9); }
+  .pl-btn-accent { background: linear-gradient(135deg, var(--cyan), #0891b2); }
+  .pl-btn-small {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text);
+    transition: all 0.2s;
+  }
+  .pl-btn-small:hover { background: rgba(255,255,255,0.15); }
+
+  .playlist-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .playlist-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .playlist-card:hover {
+    background: var(--card-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  .playlist-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(124,58,237,0.15);
+  }
+  .playlist-card .pl-name {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .playlist-card .pl-badge {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    background: rgba(6,182,212,0.15);
+    color: var(--cyan);
+    margin-left: auto;
+  }
+  .playlist-card .pl-stats {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 0.5rem;
+  }
+  .playlist-card .pl-stats span { margin-right: 1rem; }
+  .playlist-card .pl-stats .stat-new { color: var(--orange); }
+  .playlist-card .pl-stats .stat-added { color: var(--cyan); }
+  .playlist-card .pl-stats .stat-dismissed { color: var(--text-dim); }
+  .playlist-card .pl-last-checked {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 0.6rem;
+  }
+  .playlist-card .pl-actions {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .playlist-card .pl-actions button {
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .playlist-card .pl-actions button:hover { background: rgba(255,255,255,0.1); }
+  .playlist-card .pl-actions button.pl-check {
+    color: var(--green);
+    border-color: rgba(34,197,94,0.3);
+  }
+  .playlist-card .pl-actions button.pl-check:hover { background: rgba(34,197,94,0.1); }
+  .playlist-card .pl-actions button.pl-edit { color: var(--cyan); }
+  .playlist-card .pl-actions button.pl-delete { color: var(--red); }
+  .playlist-card .pl-actions button.pl-delete:hover { background: rgba(239,68,68,0.1); }
+
+  /* Videos Section */
+  .videos-section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-top: 0;
+  }
+  .videos-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .videos-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .videos-filter {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .videos-filter select {
+    padding: 0.4rem 0.75rem;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.85rem;
+    outline: none;
+  }
+  .videos-count {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  .videos-table {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .video-row {
+    display: grid;
+    grid-template-columns: 32px 1fr auto auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 8px;
+    transition: background 0.15s;
+  }
+  .video-row:hover { background: rgba(255,255,255,0.05); }
+  .video-row .v-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+  .video-row .v-info {
+    min-width: 0;
+  }
+  .video-row .v-info .v-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .video-row .v-info .v-title:hover { color: var(--cyan); }
+  .video-row .v-info .v-channel {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+  .video-row .v-date {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .video-row .v-actions {
+    display: flex;
+    gap: 0.3rem;
+    white-space: nowrap;
+  }
+  .video-row .v-actions button {
+    padding: 0.25rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .video-row .v-actions button:hover { background: rgba(255,255,255,0.1); }
+  .video-row .v-actions button.v-analyze { color: var(--cyan); border-color: rgba(6,182,212,0.3); }
+  .video-row .v-actions button.v-dismiss { color: var(--text-dim); }
+  .video-row .v-actions button.v-dismiss:hover { color: var(--orange); }
+  .video-row .v-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .v-badge.new { background: rgba(245,158,11,0.2); color: var(--orange); }
+  .v-badge.added { background: rgba(6,182,212,0.2); color: var(--cyan); }
+  .v-badge.dismissed { background: rgba(100,100,100,0.2); color: var(--text-dim); }
+  .v-badge.filed { background: rgba(34,197,94,0.2); color: var(--green); }
+
+  @media (max-width: 768px) {
+    .video-row {
+      grid-template-columns: 24px 1fr;
+      grid-template-rows: auto auto;
+      gap: 0.4rem;
+      padding: 0.75rem;
+    }
+    .video-row .v-date, .video-row .v-actions, .video-row .v-badge {
+      grid-column: 1 / -1;
+      padding-left: 0;
+    }
+    .video-row .v-actions { margin-top: 0.25rem; }
+  }
 </style>
 </head>
 <body>
@@ -537,9 +771,9 @@
   <div class="tabs">
     <button class="tab-btn active" id="tabStatus" onclick="switchTab('status')">📊 Status</button>
     <button class="tab-btn" id="tabEntries" onclick="switchTab('entries')">📋 Einträge</button>
+    <button class="tab-btn" id="tabPlaylists" onclick="switchTab('playlists')">📋 Playlists</button>
     <button class="tab-btn" id="tabDump" onclick="switchTab('dump')">📥 Dump</button>
     <button class="tab-btn" id="tabYoutube" onclick="switchTab('youtube')">🎬 YouTube-Log</button>
-    <button class="tab-btn" id="tabSources" onclick="switchTab('sources')">📡 Quellen</button>
   </div>
 
   <!-- Status Panel -->
@@ -559,8 +793,8 @@
         <div class="label">Ungelesen</div>
       </div>
       <div class="stat-card">
-        <div class="value" id="lastScan">—</div>
-        <div class="label">Letzter Scan</div>
+        <div class="value" id="analyzedEntries">—</div>
+        <div class="label" id="analyzedLabel">Analysiert</div>
       </div>
     </div>
   </div>
@@ -571,9 +805,11 @@
       <div class="filter">
         <select id="statusFilter" onchange="loadEntries()">
           <option value="">Alle Status</option>
-          <option value="unread">Ungelesen</option>
-          <option value="read">Gelesen</option>
-          <option value="discussed">Diskutiert</option>
+          <option value="new">Neu</option>
+          <option value="pre_analyzed">Voranalsysiert</option>
+          <option value="analyzed">Analysiert</option>
+          <option value="filed">Abgelegt</option>
+          <option value="failed">Fehlgeschlagen</option>
         </select>
         <select id="sourceFilter" onchange="loadEntries()">
           <option value="">Alle Quellen</option>
@@ -614,6 +850,65 @@ https://example.com/blog/..."></textarea>
   </div>
 </div>
 
+<!-- Playlists Panel -->
+<div class="panel" id="panelPlaylists">
+  <div class="playlists-toolbar">
+    <button class="pl-btn pl-btn-primary" onclick="showPlaylistModal()">➕ Playlist hinzufügen</button>
+  </div>
+  <div class="playlist-cards" id="playlistCards">
+    <div class="empty-state">Lade Playlists …</div>
+  </div>
+  <div class="videos-section" id="videosSection" style="display:none;">
+    <div class="videos-header">
+      <h3 id="videosSectionTitle">—</h3>
+      <button class="pl-btn pl-btn-small" onclick="closeVideosSection()">✕ Schließen</button>
+    </div>
+    <div class="videos-filter">
+      <select id="videoStatusFilter" onchange="loadVideos()">
+        <option value="">Alle</option>
+        <option value="new">Neu</option>
+        <option value="added">Analysiert</option>
+        <option value="dismissed">Ignoriert</option>
+      </select>
+      <span id="videosCount" class="videos-count"></span>
+    </div>
+    <div class="videos-table" id="videosTable">
+      <div class="empty-state">Wähle eine Playlist aus</div>
+    </div>
+    <div id="bulkActions" style="display:none;margin-top:1rem;">
+      <button class="pl-btn pl-btn-accent" onclick="bulkAddSelected()">🔍 Ausgewählte analysieren (<span id="bulkCount">0</span>)</button>
+    </div>
+  </div>
+</div>
+
+<!-- Playlist Modal -->
+<div class="modal-overlay" id="playlistModal" onclick="if(event.target===this)hidePlaylistModal()">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:500px;">
+    <div class="modal-header">
+      <h2 id="playlistModalTitle">Playlist hinzufügen</h2>
+      <button class="modal-close" onclick="hidePlaylistModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="dump-form" style="max-width:100%;">
+        <label>Name</label>
+        <input type="text" id="plName" placeholder="z.B. Homelab-Watchlist">
+        <label>Playlist-URL</label>
+        <input type="text" id="plUrl" placeholder="https://youtube.com/playlist?list=...">
+        <label>Check-Intervall</label>
+        <select id="plInterval">
+          <option value="6">6 Stunden</option>
+          <option value="12">12 Stunden</option>
+          <option value="24" selected>24 Stunden</option>
+          <option value="48">48 Stunden</option>
+          <option value="168">7 Tage</option>
+        </select>
+        <div id="plFeedback" class="dump-feedback"></div>
+        <button id="plSaveBtn" onclick="savePlaylist()">💾 Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- YouTube-Log Panel -->
 <div class="panel" id="panelYoutube">
   <div class="controls">
@@ -621,42 +916,6 @@ https://example.com/blog/..."></textarea>
   </div>
   <div class="youtube-gallery" id="youtubeGallery">
     <div class="empty-state">Lade YouTube-Einträge …</div>
-  </div>
-</div>
-
-<!-- Quellen Panel -->
-<div class="panel" id="panelSources">
-  <div class="controls">
-    <div class="filter">
-      <button class="sub-tab-btn" onclick="triggerScan()" style="padding:0.4rem 1rem;">🔄 Jetzt scannen</button>
-    </div>
-    <div class="last-updated" id="sourcesUpdated"></div>
-  </div>
-  <div class="dump-form" style="max-width:100%;margin-bottom:1.5rem;">
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:0.75rem;align-items:end;">
-      <div>
-        <label>Quell-URL</label>
-        <input type="text" id="sourceUrl" placeholder="https://reddit.com/r/selfhosted oder RSS-Feed-URL">
-      </div>
-      <div>
-        <label>Typ</label>
-        <select id="sourceType">
-          <option value="subreddit">🗨️ Subreddit</option>
-          <option value="rss">📰 RSS/Atom</option>
-        </select>
-      </div>
-      <div>
-        <label>Name</label>
-        <input type="text" id="sourceName" placeholder="z.B. r/selfhosted">
-      </div>
-      <div>
-        <button onclick="addSource()" style="margin-top:1.25rem;padding:0.6rem 1.2rem;background:linear-gradient(135deg,var(--accent),#6d28d9);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;white-space:nowrap;">➕ Hinzufügen</button>
-      </div>
-    </div>
-    <div id="sourceFeedback" class="dump-feedback"></div>
-  </div>
-  <div class="entry-list" id="sourceList">
-    <div class="empty-state">Lade Quellen …</div>
   </div>
 </div>
 
@@ -684,8 +943,8 @@ function switchTab(tab) {
   document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
   if (tab === 'status') loadStatus();
   if (tab === 'entries') loadEntries();
+  if (tab === 'playlists') loadPlaylists();
   if (tab === 'youtube') loadYoutubeGallery();
-  if (tab === 'sources') loadSources();
 }
 
 // --- Status ---
@@ -700,13 +959,12 @@ async function loadStatus() {
     document.getElementById('healthStatus').textContent = 'Offline';
   }
   try {
-    const res = await fetch(API + '/api/scan/status');
-    const status = await res.json();
-    document.getElementById('totalEntries').textContent = status.total_entries ?? '—';
-    document.getElementById('unreadEntries').textContent = status.unread_entries ?? '—';
-    document.getElementById('lastScan').textContent = status.last_scan
-      ? new Date(status.last_scan).toLocaleDateString('de-DE')
-      : 'Nie';
+    const res = await fetch(API + '/api/stats');
+    const stats = await res.json();
+    document.getElementById('totalEntries').textContent = stats.total ?? '—';
+    document.getElementById('unreadEntries').textContent = stats.unread ?? '—';
+    document.getElementById('analyzedEntries').textContent = stats.analyzed ?? '—';
+    document.getElementById('analyzedLabel').textContent = 'Analysiert';
   } catch {}
 }
 
@@ -740,7 +998,7 @@ async function loadEntries() {
       return;
     }
 
-    const hasProcessing = entries.some(e => e.status === 'processing');
+    const hasProcessing = entries.some(e => e.status === 'processing' || e.processing_step);
 
     container.innerHTML = entries.map(e => {
       const analysis = e.analysis || {};
@@ -749,11 +1007,13 @@ async function loadEntries() {
         ? analysis.topics.slice(0, 2).map(t => t.name).join(' · ')
         : '';
 
-      // Status badge
-      let statusHtml = `<span class="status-badge ${e.status}">${e.status}</span>`;
-      if (e.status === 'processing' && e.processing_step) {
+      // Status badge — prefer processing_step over status when actively processing
+      let statusHtml;
+      if (e.processing_step) {
         const label = STEP_LABELS[e.processing_step] || e.processing_step;
         statusHtml = `<span class="status-badge processing">🔄 ${label}</span>`;
+      } else {
+        statusHtml = `<span class="status-badge ${e.status}">${e.status}</span>`;
       }
 
       return `<div class="entry-card">
@@ -771,6 +1031,8 @@ async function loadEntries() {
             ${statusHtml}
             ${relevance ? '<span class="relevance">' + relevance + '</span>' : ''}
             ${e.obsidian_note_path ? '<span style="margin-left:0.5rem;font-size:0.8rem;">📝 <a href="obsidian://open?vault=osb&file=' + encodeURIComponent(e.obsidian_note_path) + '" target="_blank" style="color:var(--cyan);">Obsidian</a></span>' : ''}
+            ${e.trilium_suggested_path && e.status === 'analyzed' ? '<span style="margin-left:0.5rem;font-size:0.75rem;color:var(--text-dim);">🗺️ ' + escapeHtml(e.trilium_suggested_path.split(' > ').pop()) + '</span>' : ''}
+            ${e.status === 'filed' ? '<span style="margin-left:0.5rem;font-size:0.75rem;color:var(--green);">📂 ' + (e.trilium_suggested_path ? escapeHtml(e.trilium_suggested_path.split(' > ').pop()) : 'Abgelegt') + '</span>' : ''}
           </div>
           <span style="color: var(--text-dim); font-size: 0.75rem;">${new Date(e.created_at).toLocaleString('de-DE')}</span>
         </div>
@@ -970,6 +1232,7 @@ function startAutoRefresh() {
     const active = document.querySelector('.panel.active');
     if (active && active.id === 'panelStatus') loadStatus();
     if (active && active.id === 'panelEntries') loadEntries();
+    if (active && active.id === 'panelPlaylists') loadPlaylists();
     if (active && active.id === 'panelYoutube') loadYoutubeGallery();
   }, 30000);
 }
@@ -1092,7 +1355,7 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
 
   bodyEl.innerHTML = bodyHtml;
 
-  // Footer: links
+  // Footer: links + actions
   let footerHtml = '';
   if (entry.url) {
     footerHtml += `<a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener">🔗 Original-Link</a>`;
@@ -1100,6 +1363,29 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
   if (entry.obsidian_note_path) {
     footerHtml += `<a href="obsidian://open?vault=osb&file=${encodeURIComponent(entry.obsidian_note_path)}" target="_blank">📝 Obsidian-Note</a>`;
   }
+  
+  // Analyse-Button (für new/pre_analyzed)
+  if (entry.status === 'new' || entry.status === 'pre_analyzed') {
+    footerHtml += `<button onclick="triggerAnalyze(${entry.id})" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--cyan),#0891b2);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">🔍 Analysieren</button>`;
+  }
+  
+  // Trilium-Ablege-Button (für analyzed)
+  if (entry.status === 'analyzed') {
+    const suggestedPath = entry.trilium_suggested_path || '📚 Resources (Standard)';
+    footerHtml += `<div style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;color:var(--text-dim);padding:0.4rem 0;border-top:1px solid var(--border);"></div>`;
+    footerHtml += `<span style="font-size:0.8rem;color:var(--text-dim);margin-right:0.5rem;">🗺️ ${escapeHtml(suggestedPath)}</span>`;
+    footerHtml += `<button onclick="triggerTrilium(${entry.id})" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--green),#16a34a);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">📂 In Trilium ablegen</button>`;
+  }
+  
+  // Filed-Status
+  if (entry.status === 'filed') {
+    const triliumPath = entry.trilium_suggested_path || '📚 Resources';
+    footerHtml += `<span style="font-size:0.85rem;color:var(--green);padding:0.4rem 0;display:block;width:100%;border-top:1px solid var(--border);margin-top:0.5rem;padding-top:0.5rem;">✅ Abgelegt unter: ${escapeHtml(triliumPath)}</span>`;
+    if (entry.trilium_note_id) {
+      footerHtml += `<a href="http://localhost:18080/#root/${entry.trilium_note_id}" target="_blank" rel="noopener" style="font-size:0.85rem;color:var(--cyan);">📂 In Trilium öffnen</a>`;
+    }
+  }
+  
   footerEl.innerHTML = footerHtml;
 }
 
@@ -1110,40 +1396,84 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// --- Sources Tab ---
-async function loadSources() {
-  const container = document.getElementById('sourceList');
-  document.getElementById('sourcesUpdated').textContent =
-    'Zuletzt aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
-
+async function triggerAnalyze(entryId) {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Analysiere …';
   try {
-    const res = await fetch(API + '/api/sources');
-    const sources = await res.json();
-    if (!sources.length) {
-      container.innerHTML = '<div class="empty-state">Keine Quellen konfiguriert. Füge oben eine hinzu.</div>';
+    const res = await fetch(API + '/api/entries/' + entryId + '/analyze', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      btn.textContent = '✅ Gestartet';
+      setTimeout(() => { closeDetail(); loadEntries(); }, 2000);
+    } else {
+      btn.textContent = '❌ ' + (data.error || 'Fehler');
+      setTimeout(() => { btn.disabled = false; btn.textContent = '🔍 Analysieren'; }, 3000);
+    }
+  } catch (err) {
+    btn.textContent = '❌ Netzwerkfehler';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '🔍 Analysieren'; }, 3000);
+  }
+}
+
+async function triggerTrilium(entryId) {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Lege ab …';
+  try {
+    const res = await fetch(API + '/api/entries/' + entryId + '/trilium', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.status === 'filed') {
+      btn.textContent = '✅ Abgelegt';
+      setTimeout(() => { closeDetail(); loadEntries(); }, 2000);
+    } else {
+      btn.textContent = '❌ ' + (data.error || 'Fehler');
+      setTimeout(() => { btn.disabled = false; btn.textContent = '📂 In Trilium ablegen'; }, 5000);
+    }
+  } catch (err) {
+    btn.textContent = '❌ Netzwerkfehler';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '📂 In Trilium ablegen'; }, 3000);
+  }
+}
+
+// ===== Playlist Functions =====
+let selectedPlaylistId = null;
+let plEditingId = null;
+
+async function loadPlaylists() {
+  const container = document.getElementById('playlistCards');
+  try {
+    const res = await fetch(API + '/api/playlists');
+    const playlists = await res.json();
+    if (!playlists.length) {
+      container.innerHTML = '<div class="empty-state">Keine Playlists — füge eine hinzu!</div>';
       return;
     }
-    container.innerHTML = sources.map(s => {
-      const enabled = s.enabled ? '✅ Aktiv' : '⛔ Deaktiviert';
-      const lastScan = s.last_scanned_at
-        ? new Date(s.last_scanned_at).toLocaleString('de-DE')
-        : 'Nie';
-      const intervalLabel = s.interval === 'hourly' ? 'Stündlich' : s.interval === 'daily' ? 'Täglich' : s.interval;
-      return `<div class="entry-card">
-        <div class="meta">
-          <span class="source-badge ${s.type === 'subreddit' ? 'reddit' : 'rss'}">${s.type}</span>
-          <span>${escapeHtml(s.name || s.url)}</span>
+    container.innerHTML = playlists.map(p => {
+      const counts = p.video_counts || {};
+      const newCount = counts['new'] || 0;
+      const addedCount = counts['added'] || 0;
+      const dismissedCount = counts['dismissed'] || 0;
+      const lastCheck = p.last_checked_at ? new Date(p.last_checked_at).toLocaleString('de-DE') : 'Noch nie';
+      const intervalLabel = p.check_interval_hours >= 168 ? Math.floor(p.check_interval_hours / 168) + ' Wochen'
+        : p.check_interval_hours >= 24 ? Math.floor(p.check_interval_hours / 24) + ' Tage'
+        : p.check_interval_hours + 'h';
+      const activeClass = selectedPlaylistId == p.id ? ' active' : '';
+      return `<div class="playlist-card${activeClass}" onclick="selectPlaylist(${p.id})">
+        <div class="pl-name">
+          <span>🎬 ${escapeHtml(p.name)}</span>
+          <span class="pl-badge">${intervalLabel}</span>
         </div>
-        <div style="font-size:0.85rem;margin-bottom:0.3rem;">
-          <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener" style="color:var(--cyan);">${escapeHtml(s.url)}</a>
+        <div class="pl-stats">
+          <span class="stat-new">${newCount} neu</span>
+          <span class="stat-added">${addedCount} analysiert</span>
+          <span class="stat-dismissed">${dismissedCount} ignoriert</span>
         </div>
-        <div class="footer">
-          <div>
-            <span style="color:var(--text-dim);font-size:0.8rem;">🔄 ${intervalLabel}</span>
-            <span style="color:var(--text-dim);font-size:0.8rem;margin-left:1rem;">${enabled}</span>
-            <span style="color:var(--text-dim);font-size:0.8rem;margin-left:1rem;">📅 Letzter Scan: ${lastScan}</span>
-          </div>
-          <button onclick="deleteSource(${s.id})" style="background:none;border:1px solid rgba(239,68,68,0.3);color:var(--red);padding:0.25rem 0.6rem;border-radius:4px;cursor:pointer;font-size:0.8rem;">Löschen</button>
+        <div class="pl-last-checked">Letzter Check: ${lastCheck}</div>
+        <div class="pl-actions">
+          <button class="pl-check" onclick="event.stopPropagation();checkPlaylist(${p.id})">⟳ Jetzt prüfen</button>
+          <button class="pl-edit" onclick="event.stopPropagation();editPlaylist(${p.id})">⚙</button>
+          <button class="pl-delete" onclick="event.stopPropagation();deletePlaylist(${p.id})">🗑</button>
         </div>
       </div>`;
     }).join('');
@@ -1152,65 +1482,243 @@ async function loadSources() {
   }
 }
 
-async function addSource() {
-  const url = document.getElementById('sourceUrl').value.trim();
-  const type = document.getElementById('sourceType').value;
-  const name = document.getElementById('sourceName').value.trim();
-  const feedback = document.getElementById('sourceFeedback');
+async function loadVideos() {
+  const table = document.getElementById('videosTable');
+  const section = document.getElementById('videosSection');
+  if (!selectedPlaylistId) {
+    section.style.display = 'none';
+    return;
+  }
+  const statusFilter = document.getElementById('videoStatusFilter').value;
+  try {
+    let url = API + '/api/playlists/' + selectedPlaylistId + '/videos';
+    if (statusFilter) url += '?status=' + statusFilter;
+    const res = await fetch(url);
+    const videos = await res.json();
 
-  if (!url) {
+    // Update title
+    const pl = await (await fetch(API + '/api/playlists/' + selectedPlaylistId)).json();
+    document.getElementById('videosSectionTitle').textContent = pl.name + ' — ' + videos.length + ' Videos';
+
+    const newVids = videos.filter(v => v.status === 'new').length;
+    document.getElementById('videosCount').textContent = newVids + ' neue Videos';
+
+    if (!videos.length) {
+      table.innerHTML = '<div class="empty-state">Keine Videos</div>';
+      document.getElementById('bulkActions').style.display = 'none';
+      return;
+    }
+
+    const hasNew = videos.some(v => v.status === 'new');
+    table.innerHTML = videos.map(v => {
+      const ytUrl = 'https://youtube.com/watch?v=' + v.video_id;
+      const date = v.published_at ? new Date(v.published_at).toLocaleDateString('de-DE') : '';
+      const statusBadge = '<span class="v-badge ' + v.status + '">' + v.status + '</span>';
+      let actions = '';
+      if (v.status === 'new') {
+        actions = '<button class="v-analyze" onclick="addVideoToEntry(' + selectedPlaylistId + ',\'' + v.video_id + '\')">🔍 Analysieren</button>'
+          + '<button class="v-dismiss" onclick="dismissVideo(' + selectedPlaylistId + ',\'' + v.video_id + '\')">✖ Ignorieren</button>';
+      } else if (v.status === 'added') {
+        actions = '<span style="font-size:0.75rem;color:var(--cyan);">✅ In Analyse</span>';
+      } else if (v.status === 'dismissed') {
+        actions = '<span style="font-size:0.75rem;color:var(--text-dim);">✖ Ignoriert</span>';
+      }
+      const checkbox = v.status === 'new'
+        ? '<input type="checkbox" class="v-checkbox" data-video-id="' + v.video_id + '" data-playlist-id="' + selectedPlaylistId + '" onchange="updateBulkActions()">'
+        : '';
+      return '<div class="video-row">'
+        + '<div>' + checkbox + '</div>'
+        + '<div class="v-info">'
+          + '<div class="v-title" onclick="window.open(\'' + ytUrl + '\',\'_blank\')">' + escapeHtml(v.title || 'Kein Titel') + '</div>'
+          + '<div class="v-channel">' + escapeHtml(v.channel || '') + '</div>'
+        + '</div>'
+        + '<div class="v-date">' + date + '</div>'
+        + '<div class="v-actions">' + actions + '</div>'
+        + '<div>' + statusBadge + '</div>'
+        + '</div>';
+    }).join('');
+
+    document.getElementById('bulkActions').style.display = hasNew ? 'block' : 'none';
+    updateBulkActions();
+  } catch (err) {
+    table.innerHTML = '<div class="empty-state" style="color:var(--red)">⚠️ Fehler: ' + err.message + '</div>';
+  }
+}
+
+function updateBulkActions() {
+  const checks = document.querySelectorAll('.v-checkbox:checked');
+  document.getElementById('bulkCount').textContent = checks.length;
+}
+
+function getSelectedVideos() {
+  const checks = document.querySelectorAll('.v-checkbox:checked');
+  return Array.from(checks).map(cb => ({
+    playlist_id: parseInt(cb.dataset.playlistId),
+    video_id: cb.dataset.videoId
+  }));
+}
+
+async function bulkAddSelected() {
+  const items = getSelectedVideos();
+  if (!items.length) return;
+  const btn = document.querySelector('#bulkActions button');
+  btn.disabled = true;
+  btn.textContent = '⏳ Analysiere ' + items.length + ' Videos …';
+  try {
+    const res = await fetch(API + '/api/playlists/bulk/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+    await res.json();
+    btn.textContent = '✅ ' + items.length + ' analysiert';
+    loadVideos();
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = '🔍 Ausgewählte analysieren (0)';
+    }, 2000);
+  } catch (err) {
+    btn.textContent = '❌ Fehler';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '🔍 Ausgewählte analysieren (0)'; }, 3000);
+  }
+}
+
+async function selectPlaylist(id) {
+  selectedPlaylistId = id;
+  document.querySelectorAll('.playlist-card').forEach(c => c.classList.remove('active'));
+  const cards = document.querySelectorAll('.playlist-card');
+  cards.forEach(c => {
+    const idx = Array.from(c.parentElement.children).indexOf(c);
+    if (idx >= 0) {
+      const plData = JSON.parse(localStorage.getItem('pl_selected_' + id) || '{}');
+    }
+  });
+  // Find the clicked card by matching against IDs in DOM
+  // Simpler: just reload and highlight
+  document.getElementById('videosSection').style.display = 'block';
+  loadPlaylists(); // re-render to update active state
+  loadVideos();
+}
+
+function closeVideosSection() {
+  selectedPlaylistId = null;
+  document.getElementById('videosSection').style.display = 'none';
+  document.querySelectorAll('.playlist-card').forEach(c => c.classList.remove('active'));
+}
+
+function showPlaylistModal(data) {
+  document.getElementById('playlistModalTitle').textContent = data ? 'Playlist bearbeiten' : 'Playlist hinzufügen';
+  document.getElementById('plName').value = data ? data.name : '';
+  document.getElementById('plUrl').value = data ? data.playlist_url : '';
+  document.getElementById('plInterval').value = data ? String(data.check_interval_hours) : '24';
+  document.getElementById('plFeedback').className = 'dump-feedback';
+  document.getElementById('plFeedback').textContent = '';
+  document.getElementById('plSaveBtn').textContent = data ? '💾 Aktualisieren' : '💾 Speichern';
+  plEditingId = data ? data.id : null;
+  document.getElementById('playlistModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function hidePlaylistModal() {
+  document.getElementById('playlistModal').classList.remove('open');
+  document.body.style.overflow = '';
+  plEditingId = null;
+}
+
+async function savePlaylist() {
+  const name = document.getElementById('plName').value.trim();
+  const url = document.getElementById('plUrl').value.trim();
+  const interval = parseInt(document.getElementById('plInterval').value);
+  const feedback = document.getElementById('plFeedback');
+
+  if (!name || !url) {
     feedback.className = 'dump-feedback error';
-    feedback.textContent = '⚠️ Bitte gib eine URL ein.';
+    feedback.textContent = '⚠️ Name und URL sind Pflicht';
     return;
   }
 
+  const saveBtn = document.getElementById('plSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '⏳ Speichere …';
+
   try {
-    const res = await fetch(API + '/api/sources', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, url, name, interval: 'daily' })
-    });
+    let res;
+    if (plEditingId) {
+      res = await fetch(API + '/api/playlists/' + plEditingId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, playlist_url: url, check_interval_hours: interval })
+      });
+    } else {
+      res = await fetch(API + '/api/playlists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, playlist_url: url, check_interval_hours: interval })
+      });
+    }
     const data = await res.json();
     if (res.ok) {
-      feedback.className = 'dump-feedback success';
-      feedback.textContent = '✅ Quelle hinzugefügt (ID: ' + (data.id || '') + ')';
-      document.getElementById('sourceUrl').value = '';
-      document.getElementById('sourceName').value = '';
-      loadSources();
+      hidePlaylistModal();
+      loadPlaylists();
     } else {
       feedback.className = 'dump-feedback error';
-      feedback.textContent = '⚠️ ' + (data.error || 'Unbekannter Fehler');
+      feedback.textContent = '⚠️ ' + (data.error || 'Fehler');
     }
   } catch (err) {
     feedback.className = 'dump-feedback error';
     feedback.textContent = '⚠️ Netzwerkfehler: ' + err.message;
   }
+  saveBtn.disabled = false;
+  saveBtn.textContent = plEditingId ? '💾 Aktualisieren' : '💾 Speichern';
 }
 
-async function deleteSource(id) {
-  if (!confirm('Quelle wirklich löschen?')) return;
+async function checkPlaylist(id) {
   try {
-    const res = await fetch(API + '/api/sources/' + id, { method: 'DELETE' });
-    if (res.ok) {
-      loadSources();
-    } else {
-      const data = await res.json();
-      alert('Fehler: ' + (data.error || 'Unbekannt'));
-    }
+    const res = await fetch(API + '/api/playlists/' + id + '/check', { method: 'POST' });
+    const data = await res.json();
+    loadPlaylists();
+    if (selectedPlaylistId == id) loadVideos();
   } catch (err) {
-    alert('Netzwerkfehler: ' + err.message);
+    console.error('Check Fehler:', err);
   }
 }
 
-async function triggerScan() {
+function editPlaylist(id) {
+  fetch(API + '/api/playlists/' + id)
+    .then(r => r.json())
+    .then(pl => showPlaylistModal(pl))
+    .catch(err => alert('Fehler: ' + err.message));
+}
+
+async function deletePlaylist(id) {
+  if (!confirm('Playlist wirklich löschen? Alle zugehörigen Videos werden entfernt.')) return;
   try {
-    const res = await fetch(API + '/api/scan/now', { method: 'POST' });
-    const data = await res.json();
-    alert(data.message || 'Scan gestartet');
-    // Reload sources after a delay to show updated last_scanned_at
-    setTimeout(loadSources, 5000);
+    await fetch(API + '/api/playlists/' + id, { method: 'DELETE' });
+    if (selectedPlaylistId == id) closeVideosSection();
+    loadPlaylists();
   } catch (err) {
-    alert('Fehler: ' + err.message);
+    console.error('Delete Fehler:', err);
+  }
+}
+
+async function addVideoToEntry(plId, vidId) {
+  try {
+    const res = await fetch(API + '/api/playlists/' + plId + '/videos/' + vidId + '/add', { method: 'POST' });
+    await res.json();
+    loadVideos();
+    loadPlaylists();
+  } catch (err) {
+    console.error('Add Fehler:', err);
+  }
+}
+
+async function dismissVideo(plId, vidId) {
+  try {
+    await fetch(API + '/api/playlists/' + plId + '/videos/' + vidId + '/dismiss', { method: 'POST' });
+    loadVideos();
+    loadPlaylists();
+  } catch (err) {
+    console.error('Dismiss Fehler:', err);
   }
 }
 

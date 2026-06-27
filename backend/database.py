@@ -28,7 +28,7 @@ def set_processing_step(entry_id: int, step: str | None):
     try:
         db = get_db()
         if step is None:
-            db.execute("UPDATE entries SET status = 'unread', processing_step = NULL WHERE id = ?", (entry_id,))
+            db.execute("UPDATE entries SET status = 'new', processing_step = NULL WHERE id = ?", (entry_id,))
         else:
             db.execute("UPDATE entries SET processing_step = ? WHERE id = ?", (step, entry_id))
         db.commit()
@@ -42,15 +42,47 @@ def migrate_db():
     conn = get_db()
     cursor = conn.execute("PRAGMA table_info(entries)")
     existing = {row[1] for row in cursor.fetchall()}
-    if "processing_step" not in existing:
-        conn.execute("ALTER TABLE entries ADD COLUMN processing_step TEXT")
-        print("📦 Migration: processing_step hinzugefügt")
-    if "thumbnail_url" not in existing:
-        conn.execute("ALTER TABLE entries ADD COLUMN thumbnail_url TEXT")
-        print("📦 Migration: thumbnail_url hinzugefügt")
-    if "language" not in existing:
-        conn.execute("ALTER TABLE entries ADD COLUMN language TEXT DEFAULT 'de'")
-        print("📦 Migration: language hinzugefügt")
+    for col, col_type in [
+        ("processing_step", "TEXT"),
+        ("thumbnail_url", "TEXT"),
+        ("language", "TEXT DEFAULT 'de'"),
+        ("trilium_suggested_path", "TEXT"),
+        ("trilium_target_note_id", "TEXT"),
+        ("trilium_note_id", "TEXT"),
+    ]:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE entries ADD COLUMN {col} {col_type}")
+            print(f"📦 Migration: {col} hinzugefügt")
+
+    # Ensure playlists table exists (for existing DBs)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS playlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            playlist_url TEXT NOT NULL UNIQUE,
+            check_interval_hours INTEGER DEFAULT 24,
+            last_checked_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS playlist_videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            video_id TEXT NOT NULL,
+            title TEXT,
+            channel TEXT,
+            thumbnail_url TEXT,
+            published_at TEXT,
+            status TEXT DEFAULT 'new',
+            entry_id INTEGER REFERENCES entries(id),
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(playlist_id, video_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_playlist_videos_playlist ON playlist_videos(playlist_id);
+        CREATE INDEX IF NOT EXISTS idx_playlist_videos_status ON playlist_videos(status);
+    """)
+
     conn.commit()
     conn.close()
 
@@ -97,9 +129,34 @@ def init_db():
             FOREIGN KEY (entry_id) REFERENCES entries(id)
         );
 
+        CREATE TABLE IF NOT EXISTS playlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            playlist_url TEXT NOT NULL UNIQUE,
+            check_interval_hours INTEGER DEFAULT 24,
+            last_checked_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS playlist_videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            video_id TEXT NOT NULL,
+            title TEXT,
+            channel TEXT,
+            thumbnail_url TEXT,
+            published_at TEXT,
+            status TEXT DEFAULT 'new',
+            entry_id INTEGER REFERENCES entries(id),
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(playlist_id, video_id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(status);
         CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source_type);
         CREATE INDEX IF NOT EXISTS idx_entries_created ON entries(created_at);
+        CREATE INDEX IF NOT EXISTS idx_playlist_videos_playlist ON playlist_videos(playlist_id);
+        CREATE INDEX IF NOT EXISTS idx_playlist_videos_status ON playlist_videos(status);
     """)
     conn.commit()
     conn.close()
