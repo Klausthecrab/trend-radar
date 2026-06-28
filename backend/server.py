@@ -1733,7 +1733,19 @@ class Handler(SimpleHTTPRequestHandler):
                               "trilium_note_id", "trilium_target_note_id", "stage_progress"):
                     if field in body:
                         val = body[field]
-                        if isinstance(val, (dict, list)):
+                        # stage_progress: merge instead of overwrite
+                        if field == "stage_progress" and isinstance(val, dict):
+                            existing_sp = row["stage_progress"]
+                            if existing_sp:
+                                try:
+                                    merged = json.loads(existing_sp)
+                                except (json.JSONDecodeError, TypeError):
+                                    merged = {}
+                            else:
+                                merged = {}
+                            merged.update(val)
+                            val = json.dumps(merged)
+                        elif isinstance(val, (dict, list)):
                             val = json.dumps(val)
                         updates.append(f"{field} = ?")
                         args.append(val)
