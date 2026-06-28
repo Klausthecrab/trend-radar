@@ -242,6 +242,70 @@
     color: var(--orange);
   }
 
+  /* Stage Progress */
+  .stage-progress {
+    margin: 0.4rem 0 0.5rem;
+  }
+  .stage-icons {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.3rem;
+  }
+  .s-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    transition: all 0.3s ease;
+  }
+  .s-icon.s-done {
+    opacity: 1;
+    filter: none;
+    background: rgba(34,197,94,0.15);
+    box-shadow: 0 0 6px rgba(34,197,94,0.2);
+  }
+  .s-icon.s-pending {
+    opacity: 0.3;
+    filter: grayscale(0.9);
+  }
+  .s-icon.s-active {
+    opacity: 1;
+    animation: s-pulse 1.5s ease-in-out infinite;
+    background: rgba(6,182,212,0.15);
+    box-shadow: 0 0 10px rgba(6,182,212,0.35);
+  }
+  @keyframes s-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+  }
+  .stage-bar {
+    height: 3px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .stage-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan), var(--accent));
+    border-radius: 3px;
+    transition: width 0.6s ease;
+  }
+  .stage-percent {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+  .stage-icons-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
   /* Dump Form */
   .dump-form {
     background: var(--card);
@@ -1255,6 +1319,45 @@ const STEP_LABELS = {
   'saving': '💾 Speichere…',
 };
 
+// ─── Stage Progress Rendering ─────────────────────────
+function renderStageProgress(sp, sourceType, status) {
+  if (!sp) return '';
+  const isYt = sourceType === 'youtube';
+
+  // Determine which step is currently active
+  let activeField = null;
+  const stepOrder = ['received'];
+  if (isYt) stepOrder.push('transcribed');
+  stepOrder.push('analyzed', 'path_found', 'filed');
+
+  if (status === 'transcribing' || status === 'transcribed') activeField = 'transcribed';
+  else if (status === 'analyzing' || status === 'analyzed') activeField = 'analyzed';
+  else if (status === 'path_suggested') activeField = 'path_found';
+  else if (status === 'filed') activeField = null;
+  else if (status === 'failed') activeField = null;
+  else activeField = stepOrder.find(f => !sp[f]) || null;
+
+  let html = '<div class="stage-progress"><div class="stage-icons">';
+  let done = 0;
+  const total = isYt ? 5 : 4;
+
+  function iconStep(emoji, field, label) {
+    if (sp[field]) { done++; html += `<span class="s-icon s-done" title="${label}">${emoji}</span>`; }
+    else if (field === activeField) html += `<span class="s-icon s-active" title="${label} läuft…">${emoji}</span>`;
+    else html += `<span class="s-icon s-pending" title="${label}">${emoji}</span>`;
+  }
+
+  iconStep('📥', 'received', 'Empfangen');
+  if (isYt) iconStep('🎤', 'transcribed', 'Transkribiert');
+  iconStep('🔎', 'analyzed', 'Analysiert');
+  iconStep('🏷️', 'path_found', 'Pfad gefunden');
+  iconStep('✅', 'filed', 'Abgelegt');
+
+  const pct = Math.round((done / total) * 100);
+  html += `</div><div class="stage-bar"><div class="stage-bar-fill" style="width:${pct}%"></div></div></div>`;
+  return html;
+}
+
 async function loadEntries() {
   const container = document.getElementById('entryList');
   const statusFilter = document.getElementById('statusFilter').value;
@@ -1302,6 +1405,7 @@ async function loadEntries() {
         <div class="title" onclick="openDetail(${e.id})">${e.title || 'Kein Titel'}</div>
         <div class="summary">${e.content ? e.content.slice(0, 200) + (e.content.length > 200 ? '…' : '') : ''}</div>
         ${topics ? '<div class="summary" style="color: var(--cyan); font-size: 0.8rem;">💡 ' + topics + '</div>' : ''}
+        ${renderStageProgress(e.stage_progress, e.source_type, e.status)}
         <div class="footer">
           <div>
             ${statusHtml}
@@ -1697,8 +1801,9 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
   }
   metaHtml += '</div>';
 
-  // Content
+  // Stage Progress
   let bodyHtml = metaHtml;
+  bodyHtml += renderStageProgress(entry.stage_progress, entry.source_type, entry.status);
 
   // Full content / transcript
   if (entry.content) {
