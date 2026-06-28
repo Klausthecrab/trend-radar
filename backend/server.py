@@ -16,7 +16,7 @@ from trilium import RESOURCES_NOTE_ID, get_resources_structure, format_structure
 
 # Kanban board configuration
 KANBAN_BOARD_SLUG = "trend-radar"
-KANBAN_BOARD_PATH = Path(os.path.expanduser("~/.hermes/kanban.db"))
+KANBAN_BOARD_PATH = Path(os.path.expanduser(f"~/.hermes/kanban/boards/{KANBAN_BOARD_SLUG}/kanban.db"))
 KANBAN_BOARD_COLUMNS = ["todo", "ready", "running", "review", "done"]
 
 def _detect_source_type(url: str) -> str:
