@@ -46,22 +46,70 @@ def _update_stage_progress(entry_id, field, value=True):
 
 
 def _send_to_kanban(entry_id):
-    """Set status + processing_step to start Kanban processing.
-    This is equivalent to 'pushing the entry to the Kanban'."""
+    """Set status + processing_step and create a real Hermes Kanban card.
+    Falls back to local-only update if Kanban CLI fails (Issue #42)."""
     db = get_db()
     try:
-        row = db.execute("SELECT source_type, status FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        row = db.execute(
+            "SELECT source_type, status, url, title, stage_progress FROM entries WHERE id = ?",
+            (entry_id,)
+        ).fetchone()
         if not row:
             return
+
         source_type = row["source_type"]
+        url = row["url"] if row["url"] is not None else ""
+        entry_title = row["title"] if row["title"] is not None else ""
+        stage_progress = row["stage_progress"] if row["stage_progress"] is not None else "{}"
+
+        # Determine step and new status based on source type
         if source_type == "youtube":
-            db.execute("UPDATE entries SET status = 'transcribing', processing_step = 'extracting' WHERE id = ?",
-                       (entry_id,))
+            kanban_step = "extract"
+            new_status = "transcribing"
+            processing_step = "extracting"
         else:
-            db.execute("UPDATE entries SET status = 'analyzing', processing_step = 'analyzing' WHERE id = ?",
-                       (entry_id,))
+            kanban_step = "analyze"
+            new_status = "analyzing"
+            processing_step = "analyzing"
+
+        # Local DB update (always — fallback if Kanban CLI fails)
+        db.execute(
+            "UPDATE entries SET status = ?, processing_step = ? WHERE id = ?",
+            (new_status, processing_step, entry_id)
+        )
         db.commit()
-        print(f"📤 Entry #{entry_id} ({source_type}) ins Kanban geschickt — processing_step gesetzt")
+        print(f"📤 Entry #{entry_id} ({source_type}) — Status={new_status}, Step={processing_step}")
+
+        # Ensure Kanban board exists
+        _ensure_kanban_board()
+
+        # Create real Kanban card via Hermes CLI
+        kanban_title = f"📡 Trend Radar | Eintrag #{entry_id} | Schritt: {kanban_step}"
+        kanban_body = (
+            f"URL: {url}\n"
+            f"Titel: {entry_title}\n"
+            f"Aktueller Status: {new_status}\n"
+            f"Stage: {stage_progress}"
+        )
+
+        try:
+            result = subprocess.run(
+                ["hermes", "kanban", "--board", KANBAN_BOARD_SLUG, "create",
+                 kanban_title, "--body", kanban_body, "--created-by", "trend-radar",
+                 "--json"],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0:
+                try:
+                    card = json.loads(result.stdout)
+                    print(f"   🗂️ Kanban-Karte erstellt: {card.get('id', '?')}")
+                except json.JSONDecodeError as e:
+                    print(f"   ⚠️ Kanban-Output nicht-JSON: {result.stdout[:200]} — Karte existiert trotzdem")
+            else:
+                print(f"⚠️  Kanban-Karte Fehler (lokaler Status bleibt): {result.stderr[:200]}")
+        except Exception as e:
+            print(f"⚠️  Kanban-CLI Exception (lokaler Status bleibt): {e}")
+
     finally:
         db.close()
 
