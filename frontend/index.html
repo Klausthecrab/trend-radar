@@ -528,6 +528,77 @@
     .modal-header, .modal-body, .modal-footer { padding: 1rem; }
   }
 
+  /* ===== Automatik Toggle ===== */
+  .auto-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 0.75rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .auto-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #555;
+    border-radius: 24px;
+    transition: background 0.3s;
+  }
+  .toggle-slider::before {
+    content: "";
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.3s;
+  }
+  .toggle-switch input:checked + .toggle-slider {
+    background: var(--green);
+    box-shadow: 0 0 8px rgba(34,197,94,0.4);
+  }
+  .toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(20px);
+  }
+  .auto-status {
+    font-size: 0.85rem;
+    font-weight: 700;
+    transition: color 0.3s;
+  }
+  .auto-status.on { color: var(--green); }
+  .auto-status.off { color: var(--orange); }
+  .auto-msg {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .auto-msg.show { opacity: 1; }
+  .auto-msg.success { color: var(--green); }
+  .auto-msg.error { color: var(--red); }
+
   /* ===== Playlist Styles ===== */
   .playlists-toolbar {
     margin-bottom: 1.25rem;
@@ -883,6 +954,17 @@
   <div class="header">
     <h1>📡 Trend-Radar</h1>
     <p>Nach vorne statt nach hinten — Trends erkennen, bevor sie Standard sind</p>
+  </div>
+
+  <!-- Automatik Toggle -->
+  <div class="auto-bar" id="autoBar">
+    <span class="auto-label">🤖 Automatik</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="autoToggle" onchange="toggleAutomatik()">
+      <span class="toggle-slider"></span>
+    </label>
+    <span class="auto-status" id="autoStatus">AN</span>
+    <span class="auto-msg" id="autoMsg"></span>
   </div>
 
   <!-- Tabs -->
@@ -1360,6 +1442,58 @@ async function loadYoutubeGallery() {
     }).join('');
   } catch (err) {
     container.innerHTML = '<div class="empty-state" style="color:var(--red)">⚠️ Fehler: ' + err.message + '</div>';
+  }
+}
+
+// --- Automatik Toggle ---
+async function loadAutomatik() {
+  const toggle = document.getElementById('autoToggle');
+  const statusEl = document.getElementById('autoStatus');
+  try {
+    const res = await fetch('/api/config');
+    const config = await res.json();
+    toggle.checked = config.automatik_an === true;
+    updateAutoStatus(config.automatik_an);
+  } catch {
+    statusEl.textContent = '⚠️';
+    statusEl.className = 'auto-status off';
+  }
+}
+
+function updateAutoStatus(on) {
+  const statusEl = document.getElementById('autoStatus');
+  statusEl.textContent = on ? 'AN' : 'AUS';
+  statusEl.className = 'auto-status ' + (on ? 'on' : 'off');
+}
+
+function showAutoMsg(text, type) {
+  const msg = document.getElementById('autoMsg');
+  msg.textContent = text;
+  msg.className = 'auto-msg show ' + type;
+  setTimeout(() => { msg.className = 'auto-msg'; }, 2500);
+}
+
+async function toggleAutomatik() {
+  const toggle = document.getElementById('autoToggle');
+  const newVal = toggle.checked;
+  updateAutoStatus(newVal);
+  try {
+    const res = await fetch('/api/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ automatik_an: newVal })
+    });
+    if (res.ok) {
+      showAutoMsg(newVal ? '✅ Automatik aktiviert' : '⏸️ Automatik pausiert', 'success');
+    } else {
+      toggle.checked = !newVal;
+      updateAutoStatus(!newVal);
+      showAutoMsg('❌ Fehler beim Umschalten', 'error');
+    }
+  } catch {
+    toggle.checked = !newVal;
+    updateAutoStatus(!newVal);
+    showAutoMsg('❌ Netzwerkfehler', 'error');
   }
 }
 
@@ -2020,6 +2154,7 @@ async function dismissVideo(plId, vidId) {
 
 // Init
 loadStatus();
+loadAutomatik();
 startAutoRefresh();
 </script>
 </body>
