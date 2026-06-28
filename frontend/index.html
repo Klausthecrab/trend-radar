@@ -177,6 +177,57 @@
     border-radius: 4px;
     font-size: 0.75rem;
   }
+  .entry-card .footer-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .kanban-btn {
+    padding: 0.25rem 0.65rem;
+    border: 1px solid rgba(124,58,237,0.4);
+    border-radius: 6px;
+    background: rgba(124,58,237,0.12);
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .kanban-btn:hover { background: rgba(124,58,237,0.25); }
+  .kanban-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: rgba(100,100,100,0.1);
+    border-color: var(--border);
+    color: var(--text-dim);
+  }
+  .kanban-btn.success {
+    background: rgba(34,197,94,0.15);
+    border-color: rgba(34,197,94,0.3);
+    color: var(--green);
+  }
+  .kanban-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+  .kanban-bulk-btn {
+    padding: 0.35rem 0.75rem;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: rgba(124,58,237,0.15);
+    color: var(--accent);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .kanban-bulk-btn:hover { background: rgba(124,58,237,0.3); }
+  .kanban-bulk-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .kanban-bulk-btn.hidden { display: none; }
   .status-badge.unread { background: rgba(34,197,94,0.2); color: var(--green); }
   .status-badge.read { background: rgba(100,100,100,0.2); color: var(--text-dim); }
   .status-badge.discussed { background: rgba(124,58,237,0.2); color: var(--accent); }
@@ -1020,6 +1071,9 @@
           <option value="web">Web</option>
         </select>
       </div>
+      <div class="kanban-bulk-bar" id="kanbanBulkBar">
+        <button class="kanban-bulk-btn hidden" id="bulkKanbanBtn" onclick="bulkSendToKanban()">📤 Alle neuen ins Kanban</button>
+      </div>
       <div class="last-updated" id="entriesUpdated"></div>
     </div>
     <div class="entry-list" id="entryList">
@@ -1155,6 +1209,7 @@ https://example.com/blog/..."></textarea>
 
 <script>
 const API = '';
+let automatikAn = true;     // globaler State, wird von loadAutomatik() gesetzt
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1255,7 +1310,12 @@ async function loadEntries() {
             ${e.trilium_suggested_path && e.status === 'analyzed' ? '<span style="margin-left:0.5rem;font-size:0.75rem;color:var(--text-dim);">🗺️ ' + escapeHtml(e.trilium_suggested_path.split(' > ').pop()) + '</span>' : ''}
             ${e.status === 'filed' ? '<span style="margin-left:0.5rem;font-size:0.75rem;color:var(--green);">📂 ' + (e.trilium_suggested_path ? escapeHtml(e.trilium_suggested_path.split(' > ').pop()) : 'Abgelegt') + '</span>' : ''}
           </div>
-          <span style="color: var(--text-dim); font-size: 0.75rem;">${new Date(e.created_at).toLocaleString('de-DE')}</span>
+          <div class="footer-right">
+            ${!automatikAn && (e.status === 'new' || e.status === 'pre_analyzed' || e.status === 'failed') 
+              ? '<button class="kanban-btn" onclick="sendToKanban(' + e.id + ', this)">📤 Ins Kanban</button>' 
+              : ''}
+            <span style="color: var(--text-dim); font-size: 0.75rem;">${new Date(e.created_at).toLocaleString('de-DE')}</span>
+          </div>
         </div>
       </div>`;
     }).join('');
@@ -1274,9 +1334,71 @@ async function loadEntries() {
       refreshInterval = null;
       startAutoRefresh();
     }
+
+    // Bulk-Kanban-Button anzeigen wenn Automatik AUS + neue/pre_analyzed/failed Einträge existieren
+    const hasNewOrFailed = entries.some(e => e.status === 'new' || e.status === 'pre_analyzed' || e.status === 'failed');
+    const bulkBtn = document.getElementById('bulkKanbanBtn');
+    if (!automatikAn && hasNewOrFailed) {
+      bulkBtn.classList.remove('hidden');
+    } else {
+      bulkBtn.classList.add('hidden');
+    }
   } catch (err) {
     container.innerHTML = '<div class="empty-state">⚠️ Fehler: ' + err.message + '</div>';
   }
+}
+
+// --- Kanban Actions ---
+async function sendToKanban(entryId, btn) {
+  btn.disabled = true;
+  btn.textContent = '⏳ Sende …';
+  try {
+    const res = await fetch(API + '/api/entries/' + entryId + '/kanban', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      btn.className = 'kanban-btn success';
+      btn.textContent = '✅ Gesendet';
+      // Refresh nach kurzer Verzögerung
+      setTimeout(() => loadEntries(), 2000);
+    } else {
+      btn.disabled = false;
+      btn.textContent = '❌ ' + (data.error || 'Fehler');
+      setTimeout(() => { btn.textContent = '📤 Ins Kanban'; btn.disabled = false; }, 3000);
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = '❌ Netzwerkfehler';
+    setTimeout(() => { btn.textContent = '📤 Ins Kanban'; btn.disabled = false; }, 3000);
+  }
+}
+
+async function bulkSendToKanban() {
+  const btn = document.getElementById('bulkKanbanBtn');
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '⏳ Sende alle …';
+  let success = 0;
+  let failed = 0;
+  try {
+    const res = await fetch(API + '/api/entries?limit=200');
+    const entries = await res.json();
+    const candidates = entries.filter(e => !automatikAn && (e.status === 'new' || e.status === 'pre_analyzed' || e.status === 'failed'));
+    btn.textContent = '⏳ Sende ' + candidates.length + ' Einträge …';
+    for (const e of candidates) {
+      try {
+        const r = await fetch(API + '/api/entries/' + e.id + '/kanban', { method: 'POST' });
+        if (r.ok) success++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    btn.textContent = '✅ ' + success + ' gesendet' + (failed ? ', ' + failed + ' Fehler' : '');
+    setTimeout(() => { loadEntries(); }, 2000);
+  } catch (err) {
+    btn.textContent = '❌ Fehler: ' + err.message;
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = originalText; }, 4000);
 }
 
 // --- YouTube-Log Gallery ---
@@ -1452,8 +1574,9 @@ async function loadAutomatik() {
   try {
     const res = await fetch('/api/config');
     const config = await res.json();
-    toggle.checked = config.automatik_an === true;
-    updateAutoStatus(config.automatik_an);
+    automatikAn = config.automatik_an === true;
+    toggle.checked = automatikAn;
+    updateAutoStatus(automatikAn);
   } catch {
     statusEl.textContent = '⚠️';
     statusEl.className = 'auto-status off';

@@ -674,8 +674,8 @@ class Handler(SimpleHTTPRequestHandler):
                     self._send_json({"error": "Entry not found"}, 404)
                     return
                 entry = dict(row)
-                if entry["status"] not in ("new", "pre_analyzed"):
-                    self._send_json({"error": f"Kanban nur für new/pre_analyzed möglich, aktuell: {entry['status']}"}, 400)
+                if entry["status"] not in ("new", "pre_analyzed", "failed"):
+                    self._send_json({"error": f"Kanban nur für new/pre_analyzed/failed möglich, aktuell: {entry['status']}"}, 400)
                     return
                 _send_to_kanban(entry_id)
                 self._send_json({"message": f"Entry #{entry_id} ins Kanban geschickt", "status": "kanban"})
