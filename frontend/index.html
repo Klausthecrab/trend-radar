@@ -1505,6 +1505,23 @@ async function bulkSendToKanban() {
   setTimeout(() => { btn.disabled = false; btn.textContent = originalText; }, 4000);
 }
 
+// Kanban-Button für Detail-Modal
+async function sendToKanbanModal(entryId) {
+  const modal = document.getElementById('detailModal');
+  try {
+    const res = await fetch(API + '/api/entries/' + entryId + '/kanban', { method: 'POST' });
+    if (res.ok) {
+      closeDetail();
+      setTimeout(() => loadEntries(), 500);
+    } else {
+      const data = await res.json();
+      alert('❌ ' + (data.error || 'Fehler beim Senden ins Kanban'));
+    }
+  } catch (err) {
+    alert('❌ Netzwerkfehler');
+  }
+}
+
 // --- YouTube-Log Gallery ---
 async function loadYoutubeGallery() {
   const container = document.getElementById('youtubeGallery');
@@ -1866,9 +1883,14 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
     footerHtml += `<a href="obsidian://open?vault=osb&file=${encodeURIComponent(entry.obsidian_note_path)}" target="_blank">📝 Obsidian-Note</a>`;
   }
   
-  // Analyse-Button (für new/pre_analyzed)
+  // Kanban-Button (primary action für new/pre_analyzed/failed)
+  if (entry.status === 'new' || entry.status === 'pre_analyzed' || entry.status === 'failed') {
+    footerHtml += `<button onclick="sendToKanbanModal(${entry.id})" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--accent),#6d28d9);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">📤 Ins Kanban</button>`;
+  }
+  
+  // Analyse-Button (v2.1 fallback für new/pre_analyzed)
   if (entry.status === 'new' || entry.status === 'pre_analyzed') {
-    footerHtml += `<button onclick="triggerAnalyze(${entry.id})" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--cyan),#0891b2);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">🔍 Analysieren</button>`;
+    footerHtml += `<button onclick="triggerAnalyze(${entry.id})" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--cyan),#0891b2);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">🔍 Analysieren (v2)</button>`;
   }
   
   // Trilium-Ablege-Button (für analyzed)

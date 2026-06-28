@@ -24,11 +24,12 @@ def get_db():
 
 
 def set_processing_step(entry_id: int, step: str | None):
-    """Update processing_step and optionally status for an entry."""
+    """Update processing_step for an entry.
+    If step is None, clear processing_step but do NOT change status."""
     try:
         db = get_db()
         if step is None:
-            db.execute("UPDATE entries SET status = 'new', processing_step = NULL WHERE id = ?", (entry_id,))
+            db.execute("UPDATE entries SET processing_step = NULL WHERE id = ?", (entry_id,))
         else:
             db.execute("UPDATE entries SET processing_step = ? WHERE id = ?", (step, entry_id))
         db.commit()
