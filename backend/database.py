@@ -44,6 +44,7 @@ def migrate_db():
     existing = {row[1] for row in cursor.fetchall()}
     for col, col_type in [
         ("processing_step", "TEXT"),
+        ("stage_progress", "TEXT"),
         ("thumbnail_url", "TEXT"),
         ("language", "TEXT DEFAULT 'de'"),
         ("trilium_suggested_path", "TEXT"),
@@ -53,6 +54,31 @@ def migrate_db():
         if col not in existing:
             conn.execute(f"ALTER TABLE entries ADD COLUMN {col} {col_type}")
             print(f"📦 Migration: {col} hinzugefügt")
+
+    # Ensure config table exists (for existing DBs)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO config (key, value) VALUES ('automatik_an', 'true');
+    """)
+
+    # Ensure telegram_inbox table exists (for existing DBs)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS telegram_inbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            title TEXT,
+            sender_name TEXT,
+            message_id INTEGER,
+            chat_id INTEGER,
+            status TEXT DEFAULT 'new',
+            entry_id INTEGER REFERENCES entries(id),
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_inbox_msg ON telegram_inbox(message_id, chat_id);
+    """)
 
     # Ensure playlists table exists (for existing DBs)
     conn.executescript("""
@@ -101,6 +127,11 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_id INTEGER,
@@ -116,6 +147,20 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (source_id) REFERENCES sources(id)
         );
+
+        CREATE TABLE IF NOT EXISTS telegram_inbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            title TEXT,
+            sender_name TEXT,
+            message_id INTEGER,
+            chat_id INTEGER,
+            status TEXT DEFAULT 'new',
+            entry_id INTEGER REFERENCES entries(id),
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_inbox_msg ON telegram_inbox(message_id, chat_id);
 
         CREATE TABLE IF NOT EXISTS analysis (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,6 +269,36 @@ def seed_dummy_data():
         )
     conn.commit()
     conn.close()
+
+
+def get_config(key: str, default: str = None) -> str | None:
+    """Get a config value from the config table."""
+    db = get_db()
+    try:
+        row = db.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+    finally:
+        db.close()
+
+
+def set_config(key: str, value: str):
+    """Set a config value in the config table (upsert)."""
+    db = get_db()
+    try:
+        db.execute(
+            "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value)
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def init_stage_progress(source_type: str) -> str:
+    """Return JSON for initial stage_progress based on source_type."""
+    if source_type == "youtube":
+        return json.dumps({"received": True, "transcribed": False, "analyzed": False, "path_found": False, "filed": False})
+    return json.dumps({"received": True, "transcribed": True, "analyzed": False, "path_found": False, "filed": False})
 
 
 if __name__ == "__main__":

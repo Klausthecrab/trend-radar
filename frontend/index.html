@@ -758,6 +758,124 @@
     }
     .video-row .v-actions { margin-top: 0.25rem; }
   }
+/* ===== Telegram Styles ===== */
+  .telegram-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .telegram-filters {
+    display: flex;
+    gap: 0.35rem;
+  }
+  .chip-btn {
+    padding: 0.35rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .chip-btn:hover { color: var(--text); background: var(--card-hover); }
+  .chip-btn.active {
+    background: rgba(6,182,212,0.2);
+    color: var(--cyan);
+    border-color: rgba(6,182,212,0.3);
+  }
+  .telegram-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .telegram-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    transition: background 0.15s;
+  }
+  .telegram-row:hover { background: var(--card-hover); }
+  .telegram-row .t-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+  .telegram-row .t-info { min-width: 0; }
+  .telegram-row .t-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 0.15rem;
+  }
+  .telegram-row .t-url {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .telegram-row .t-url .source-badge {
+    margin-right: 0.4rem;
+  }
+  .telegram-row .t-meta {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    text-align: right;
+  }
+  .telegram-row .t-actions {
+    display: flex;
+    gap: 0.3rem;
+    white-space: nowrap;
+  }
+  .telegram-row .t-actions button {
+    padding: 0.25rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .telegram-row .t-actions button:hover { background: rgba(255,255,255,0.1); }
+  .telegram-row .t-actions button.t-analyze { color: var(--cyan); border-color: rgba(6,182,212,0.3); }
+  .telegram-row .t-actions button.t-dismiss { color: var(--orange); }
+  .telegram-row .t-actions button.t-dismiss:hover { background: rgba(245,158,11,0.1); }
+  .telegram-row .t-actions button.t-filed { color: var(--green); border-color: rgba(34,197,94,0.3); }
+  .telegram-row .t-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .t-badge.new { background: rgba(245,158,11,0.2); color: var(--orange); }
+  .t-badge.processing { background: rgba(6,182,212,0.2); color: var(--cyan); animation: pulse 1.5s ease-in-out infinite; }
+  .t-badge.added { background: rgba(6,182,212,0.2); color: var(--cyan); }
+  .t-badge.dismissed { background: rgba(100,100,100,0.2); color: var(--text-dim); }
+  .t-badge.filed { background: rgba(34,197,94,0.2); color: var(--green); }
+
+  @media (max-width: 768px) {
+    .telegram-row {
+      grid-template-columns: 24px 1fr;
+      grid-template-rows: auto auto;
+      gap: 0.4rem;
+      padding: 0.75rem;
+    }
+    .telegram-row .t-meta, .telegram-row .t-actions {
+      grid-column: 1 / -1;
+      padding-left: 0;
+    }
+    .telegram-row .t-actions { margin-top: 0.25rem; }
+  }
 </style>
 </head>
 <body>
@@ -772,6 +890,7 @@
     <button class="tab-btn active" id="tabStatus" onclick="switchTab('status')">📊 Status</button>
     <button class="tab-btn" id="tabEntries" onclick="switchTab('entries')">📋 Einträge</button>
     <button class="tab-btn" id="tabPlaylists" onclick="switchTab('playlists')">📋 Playlists</button>
+    <button class="tab-btn" id="tabTelegram" onclick="switchTab('telegram')">📨 Telegram</button>
     <button class="tab-btn" id="tabDump" onclick="switchTab('dump')">📥 Dump</button>
     <button class="tab-btn" id="tabYoutube" onclick="switchTab('youtube')">🎬 YouTube-Log</button>
   </div>
@@ -847,6 +966,25 @@ https://example.com/blog/..."></textarea>
       <div id="dumpFeedback" class="dump-feedback"></div>
       <div id="dumpResults" class="dump-results"></div>
     </div>
+  </div>
+</div>
+
+<!-- Telegram Panel -->
+<div class="panel" id="panelTelegram">
+  <div class="telegram-toolbar">
+    <button class="pl-btn pl-btn-accent" onclick="checkTelegramPoll()">⟳ Jetzt prüfen</button>
+    <div class="telegram-filters" id="telegramFilters">
+      <button class="chip-btn active" data-filter="" onclick="filterTelegram(this, '')">Alle</button>
+      <button class="chip-btn" data-filter="new" onclick="filterTelegram(this, 'new')">Neu</button>
+      <button class="chip-btn" data-filter="added" onclick="filterTelegram(this, 'added')">Analysiert</button>
+      <button class="chip-btn" data-filter="dismissed" onclick="filterTelegram(this, 'dismissed')">Ignoriert</button>
+    </div>
+  </div>
+  <div class="telegram-list" id="telegramList">
+    <div class="empty-state">📨 Noch keine geteilten Links<br><br>Schicke URLs an deinen Telegram-Bot per DM oder über den "Teilen"-Button.<br><br><button class="pl-btn pl-btn-accent" onclick="checkTelegramPoll()" style="margin-top:0.5rem;">⟳ Jetzt prüfen</button></div>
+  </div>
+  <div id="telegramBulkActions" style="display:none;margin-top:1rem;">
+    <button class="pl-btn pl-btn-primary" onclick="bulkAddTelegram()">🔍 Ausgewählte analysieren (<span id="telegramBulkCount">0</span>)</button>
   </div>
 </div>
 
@@ -944,6 +1082,7 @@ function switchTab(tab) {
   if (tab === 'status') loadStatus();
   if (tab === 'entries') loadEntries();
   if (tab === 'playlists') loadPlaylists();
+  if (tab === 'telegram') loadTelegramInbox();
   if (tab === 'youtube') loadYoutubeGallery();
 }
 
@@ -1233,6 +1372,7 @@ function startAutoRefresh() {
     if (active && active.id === 'panelStatus') loadStatus();
     if (active && active.id === 'panelEntries') loadEntries();
     if (active && active.id === 'panelPlaylists') loadPlaylists();
+    if (active && active.id === 'panelTelegram') loadTelegramInbox();
     if (active && active.id === 'panelYoutube') loadYoutubeGallery();
   }, 30000);
 }
@@ -1433,6 +1573,162 @@ async function triggerTrilium(entryId) {
   } catch (err) {
     btn.textContent = '❌ Netzwerkfehler';
     setTimeout(() => { btn.disabled = false; btn.textContent = '📂 In Trilium ablegen'; }, 3000);
+  }
+}
+
+// ===== Telegram Functions =====
+let telegramStatusFilter = '';
+let telegramPolling = false;
+
+function filterTelegram(btn, filter) {
+  document.querySelectorAll('#telegramFilters .chip-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  telegramStatusFilter = filter;
+  loadTelegramInbox();
+}
+
+async function loadTelegramInbox() {
+  const container = document.getElementById('telegramList');
+  let url = API + '/api/telegram/inbox';
+  if (telegramStatusFilter) url += '?status=' + telegramStatusFilter;
+
+  try {
+    const res = await fetch(url);
+    const items = await res.json();
+
+    if (!items.length) {
+      container.innerHTML = '<div class="empty-state">📨 Noch keine geteilten Links<br><br>Schicke URLs an deinen Telegram-Bot per DM oder über den "Teilen"-Button.<br><br><button class="pl-btn pl-btn-accent" onclick="checkTelegramPoll()" style="margin-top:0.5rem;">⟳ Jetzt prüfen</button></div>';
+      document.getElementById('telegramBulkActions').style.display = 'none';
+      return;
+    }
+
+    container.innerHTML = items.map(item => {
+      const sourceType = item.url && (
+        item.url.includes('youtube.com') || item.url.includes('youtu.be') ? 'youtube'
+        : item.url.includes('reddit.com') ? 'reddit'
+        : 'web'
+      );
+      const sourceBadge = `<span class="source-badge ${sourceType}">${sourceType}</span>`;
+      const title = item.title || 'Kein Titel';
+      const shortUrl = item.url ? (item.url.length > 50 ? item.url.slice(0,50) + '…' : item.url) : '';
+      const date = item.created_at ? new Date(item.created_at).toLocaleDateString('de-DE') : '';
+      const sender = item.sender_name || '';
+      const checked = item.status === 'new' ? '' : 'checked';
+
+      // Determine action buttons + status badge
+      let actionsHtml = '';
+      let badgeHtml = '';
+
+      if (item.status === 'new') {
+        badgeHtml = `<span class="t-badge new">Neu</span>`;
+        actionsHtml = `
+          <button class="t-analyze" onclick="addTelegramEntry(${item.id})">🔍 Analysieren</button>
+          <button class="t-dismiss" onclick="dismissTelegramEntry(${item.id})">✖</button>
+        `;
+      } else if (item.status === 'added') {
+        badgeHtml = `<span class="t-badge added">In Analyse</span>`;
+        actionsHtml = `<span style="font-size:0.75rem;color:var(--cyan);">✅ Übernommen</span>`;
+      } else if (item.status === 'dismissed') {
+        badgeHtml = `<span class="t-badge dismissed">Ignoriert</span>`;
+        actionsHtml = `<span style="font-size:0.75rem;color:var(--text-dim);">✖ Ignoriert</span>`;
+      }
+
+      return `<div class="telegram-row" id="trow-${item.id}">
+        <input type="checkbox" class="t-checkbox" ${checked} onchange="updateTelegramBulkBtn()" value="${item.id}">
+        <div class="t-info">
+          <div class="t-title">${escapeHtml(title)}</div>
+          <div class="t-url">${sourceBadge} ${escapeHtml(shortUrl)}</div>
+        </div>
+        <div class="t-meta">${date}${sender ? ' · ' + escapeHtml(sender) : ''} ${badgeHtml}</div>
+        <div class="t-actions">${actionsHtml}</div>
+      </div>`;
+    }).join('');
+
+    updateTelegramBulkBtn();
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state" style="color:var(--red)">⚠️ Fehler: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function updateTelegramBulkBtn() {
+  const checkboxes = document.querySelectorAll('#telegramList .t-checkbox:not(:checked)');
+  const checked = document.querySelectorAll('#telegramList .t-checkbox:checked');
+  const bulkSection = document.getElementById('telegramBulkActions');
+  const bulkCount = document.getElementById('telegramBulkCount');
+
+  // Count unchecked = new items that can be bulk-processed
+  // Actually: checkboxes that are NOT checked = selected for bulk action
+  // The issue UI shows checkbox for bulk selection — unchecked = selected
+  // But standard UX: checked = selected. Let me use: checked = selected for action
+  const selected = document.querySelectorAll('#telegramList .t-checkbox:checked');
+  if (selected.length > 0) {
+    bulkSection.style.display = 'block';
+    bulkCount.textContent = selected.length;
+  } else {
+    bulkSection.style.display = 'none';
+  }
+}
+
+async function dismissTelegramEntry(id) {
+  try {
+    const res = await fetch(API + '/api/telegram/inbox/' + id + '/dismiss', { method: 'POST' });
+    if (res.ok) loadTelegramInbox();
+  } catch (err) {
+    console.error('dismiss error', err);
+  }
+}
+
+async function addTelegramEntry(id) {
+  const row = document.getElementById('trow-' + id);
+  if (row) {
+    const badge = row.querySelector('.t-badge') || row.querySelector('.t-actions');
+    if (badge) badge.innerHTML = '⏳ Analysiere…';
+  }
+  try {
+    const res = await fetch(API + '/api/telegram/inbox/' + id + '/add', { method: 'POST' });
+    if (res.ok) {
+      // Poll for status changes
+      setTimeout(() => loadTelegramInbox(), 2000);
+    }
+  } catch (err) {
+    console.error('add error', err);
+  }
+}
+
+async function bulkAddTelegram() {
+  const selected = document.querySelectorAll('#telegramList .t-checkbox:checked');
+  const ids = Array.from(selected).map(cb => parseInt(cb.value));
+  if (!ids.length) return;
+
+  try {
+    const res = await fetch(API + '/api/telegram/inbox/bulk/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
+    });
+    if (res.ok) {
+      setTimeout(() => loadTelegramInbox(), 2000);
+    }
+  } catch (err) {
+    console.error('bulk add error', err);
+  }
+}
+
+async function checkTelegramPoll() {
+  const btn = event && event.target ? event.target : document.querySelector('.telegram-toolbar .pl-btn-accent');
+  btn.disabled = true;
+  btn.textContent = '⏳ Prüfe…';
+  try {
+    await fetch(API + '/api/telegram/inbox/check', { method: 'POST' });
+    // Wait a bit then refresh
+    setTimeout(async () => {
+      await loadTelegramInbox();
+      btn.disabled = false;
+      btn.textContent = '⟳ Jetzt prüfen';
+    }, 3000);
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = '⟳ Jetzt prüfen';
   }
 }
 

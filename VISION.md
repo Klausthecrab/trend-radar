@@ -1,170 +1,218 @@
-# Trend-Radar — Vision
+# Trend-Radar — Vision (v3 — Befehlsstand)
 
-> **Nach vorne statt nach hinten.**
-> Gegenstück zum Release Radar (Changes-Tracking, rückwärtsgerichtet).
-> Trend-Radar entdeckt Neues, analysiert Relevanz, hält Daten bereit.
+> **Sammelstelle für Quellen. Befehlsstand für Analyse.**
+> Trend Radar ist das Dashboard. Hermes Agent ist der Arbeiter. Der Kanban ist die To-Do-Liste.
+>
+> *Stand: Juni 2026 — v3-Planung, Ablösung der v2-Eigenanalyse.*
 
-## Warum?
+---
 
-Release Radar und Hermi-CIO decken ab: "Was hat sich geändert, was muss ich wissen?"
-Trend-Radar deckt ab: "Was kommt auf uns zu, was ist spannend, was sollten wir testen?"
+## Was hat sich geändert (v2.1 → v3)
 
-Zwei Richtungen, eine Pipeline: **Trend-Radar → Daten → Hermi-CIO → Diskussion mit Max**
+| Aspekt | v2.1 (aktuell) | v3 (Ziel) |
+|--------|----------------|-----------|
+| **Analyse** | LLM läuft in Trend Radar (server.py-Threads) | LLM läuft in Hermes Agent via Kanban |
+| **Transkription** | yt-dlp + Venice STT in Trend Radar | Hermes Agent via Kanban |
+| **Trilium-Ablage** | ETAPI in Trend Radar | Hermes Agent via Kanban |
+| **Trend Radar** | Macht alles | Nur Dashboard + Speicher |
+| **Automatisierung** | Immer sofort (keine Wahl) | Automatik-AN/AUS-Schalter |
+| **YouTube-Route** | Gleicher Ablauf wie Web | Eigener Stufen-Pfad mit Transkript |
 
-## Drei Säulen
+---
 
-### 1. Regelmäßig (Cron-Scans)
-- Bestimmte Subreddits (z.B. r/selfhosted, r/homelab, r/technologie)
-- RSS-Feeds von relevanten KI-News / Tech-Blogs
-- Laufen automatisch auf Zeitplan (täglich / stündlich)
-- Neue Inhalte werden erkannt und durch die Analyse-Pipeline geschickt
+## Stufen-System — Zwei Routen
 
-### 2. Dump (Ad-hoc)
-- Max schmeißt YouTube-Links, Reddit-Threads oder beliebige URLs rein
-- Pipeline: Link → Inhalt extrahieren → analysieren
-- YouTube: Transkript via Whisper oder API
-- Reddit/Web: Content extrahieren
+Jeder Eintrag durchläuft Phasen. Welche Route hängt vom `source_type` ab.
 
-### 3. Analyse-Pipeline (für beide Wege gleich)
-- **A) Relevanz-Bewertung:** Was können wir daraus fürs Homelab nutzen?
-  - Ist das umsetzbar? Aufwand? Nutzen?
-  - Können wir das auf Butler testen?
-- **B) Obsidian-Ressource:** Strukturierte Note anlegen
-  - Autor, Link, Quelle, Datum
-  - Takeaways / Kernaussagen
-  - Konkrete Handlungsoptionen
+### Route A: Web / Reddit / Blog
+
+```
+📥 Neu eingetroffen
+    ↓
+🔎 LLM-Analyse (Hermes Agent)
+    ↓
+🏷️ Trilium-Pfad vorschlagen (Hermes Agent)
+    ↓
+✅ In Trilium abgelegt
+```
+
+### Route B: YouTube
+
+```
+📥 Neu eingetroffen
+    ↓
+🎤 Transkribieren (yt-dlp + Venice STT, Hermes Agent)
+    ↓
+🔎 LLM-Analyse (Hermes Agent)
+    ↓
+🏷️ Trilium-Pfad vorschlagen (Hermes Agent)
+    ↓
+✅ In Trilium abgelegt
+```
+
+---
+
+## Zwei Modi
+
+### 🔘 Automatik AN (default)
+
+Neue Einträge landen automatisch als Kanban-Karte im Hermes-Agent-Kanban.
+Hermes Agent arbeitet jede Karte Schritt für Schritt ab:
+1. Holt Daten aus Trend Radar
+2. Führt Analyse / Transkription durch
+3. Schreibt Ergebnis zurück in Trend Radar (`PATCH /api/entries/:id`)
+4. Markiert nächsten Schritt im Kanban
+5. Wiederholt bis Status = `filed`
+
+### 🔘 Automatik AUS
+
+Neue Einträge bleiben liegen. Max klickt pro Karte auf **"📤 Ins Kanban"**.
+Erst dann landet ein Eintrag im Kanban und wird verarbeitet.
+Ermöglicht bewusste Auswahl: "Das will ich analysieren, das nicht."
+
+---
+
+## Datenmodell — Status-Werte
+
+| Status | Bedeutung | Rahmenfarbe |
+|--------|-----------|-------------|
+| `new` | Gerade eingegangen, unbearbeitet | 🟡 Gelb |
+| `transcribing` | YouTube: Transkription läuft | 🟠 Orange |
+| `transcribed` | YouTube: Transkript fertig | 🟠 Orange |
+| `analyzing` | LLM-Analyse läuft | 🔵 Blau (pulsierend) |
+| `analyzed` | LLM-Analyse abgeschlossen | 🔵 Blau |
+| `path_suggested` | Trilium-Pfad vorgeschlagen | 🟣 Lila |
+| `filed` | In Trilium abgelegt | 🟢 Grün |
+| `failed` | Fehlgeschlagen | 🔴 Rot |
+
+Zusätzlich: `stage_progress`-Feld (JSON) speichert welche Stufen erreicht sind:
+```json
+{"received": true, "transcribed": true, "analyzed": true, "path_found": false, "filed": false}
+```
+
+---
+
+## UI — Eintrags-Karte mit Fortschritt
+
+Jeder Eintrag wird als Karte dargestellt:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  #42  🔗 How to deploy your own Docker…             │
+│       URL: https://blog.example.com/...              │
+│       ───────── Stufen ─────────                     │
+│       📥 ✅  🔎 ✅  🏷️ ⏳  ✅ ❌                    │
+│       [📤 Manuell ins Kanban]  [🔍 Details]         │
+└─────────────────────────────────────────────────────┘
+```
+
+YouTube-Karten haben einen extra Punkt:
+```
+┌─────────────────────────────────────────────────────┐
+│  #43  ▶️ Raspberry Pi 5 NAS Build                   │
+│       URL: https://youtube.com/...                   │
+│       ───────── Stufen ─────────                     │
+│       📥 ✅  🎤 ✅  🔎 ✅  🏷️ ⏳  ✅ ❌              │
+│       [📤 Manuell ins Kanban]  [🔍 Details]         │
+└─────────────────────────────────────────────────────┘
+```
+
+Legende: ✅ erledigt | ⏳ läuft | ❌ offen/ausstehend
+
+---
 
 ## Architektur
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  Trend-Radar (9126)                   │
-│                                                      │
-│  ┌──────────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │ Cron-Scanner  │  │  Dump-   │  │  Analyse-      │  │
-│  │ (Subreddits,  │  │ Endpoint │  │  Pipeline      │  │
-│  │  RSS, Blogs)  │  │ (Ad-hoc) │  │  (Relevanz +   │  │
-│  │               │  │          │  │   Obsidian)    │  │
-│  └──────┬───────┘  └────┬─────┘  └───────┬───────┘  │
-│         │               │                │          │
-│         └───────┬───────┘                │          │
-│                 │                        │          │
-│         ┌───────▼────────┐               │          │
-│         │  Daten-Halde   │◄──────────────┘          │
-│         │  (SQLite)      │                          │
-│         └───────┬────────┘                          │
-└─────────────────┼───────────────────────────────────┘
-                  │
-                  │ REST API
-                  ▼
-┌─────────────────────────────────────────────────────┐
-│                 Hermi-CIO (9122)                      │
-│  ┌────────────────────────────────────────────────┐  │
-│  │ Neuer Tab: "Weiterentwicklung"                  │  │
-│  │ Listet analysierte Trend-Radar-Einträge        │  │
-│  │ Max kann darüber diskutieren:                  │  │
-│  │ "Was denkst du dazu?"                          │  │
-│  │ "Sollen wir das testen?"                       │  │
-│  └────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────┘
+                    ┌──────────────────┐
+                    │   Max' Browser   │
+                    │ (Brave, Extension)│
+                    └────────┬─────────┘
+                             │ POST /api/entries (URLs)
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│               Trend Radar — Befehlsstand (Port 9126)          │
+│                                                               │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │
+│  │ Dump     │  │ Einträge │  │ Playlists│  │ Telegram     │ │
+│  │ (Input)  │  │ (Dashboard)│ │          │  │ (Inbox)      │ │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────┘ │
+│                                                               │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │  SQLite — entries mit Status + stage_progress         │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                               │
+│  🔘 Automatik AN/AUS  │  [📤 Ins Kanban] (pro Eintrag)     │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ Kanban-Karte erzeugen
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│               Hermes Agent Kanban                              │
+│                                                               │
+│  🔲 #42 — Analyse: blog.example.com (URL)                    │
+│  🔲 #43 — Transkribieren: YouTube-Video                      │
+│  🔲 #44 — Trilium-Pfad: #43                                  │
+│                                                               │
+│  Hermes Agent arbeitet ab:                                    │
+│  → Holt Daten aus Trend Radar API                             │
+│  → Führt LLM / yt-dlp / STT aus                              │
+│  → Schreibt Ergebnis zurück (PATCH /api/entries/:id)         │
+│  → Markiert Stufe als erledigt                                │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼ (wenn filed)
+                    ┌──────────────────┐
+                    │     Trilium      │
+                    │ (Ressourcen)     │
+                    └──────────────────┘
 ```
 
-**Klare Trennung:**
-- **Trend-Radar** sammelt, analysiert, hält Daten vor. Keine Diskussion.
-- **Hermi-CIO** konsumiert die fertigen Analysen. Keine Jagd/Sammlung.
-
-## Web-UI (Trend-Radar selbst, Port 9126)
-
-Eigenes Web-UI (Standalone, kein Dashboard-Portal) für Monitoring:
-
-- **Status-Tab:** Läuft der Cron? Wann wurde zuletzt gescannt? Fehlerlogs?
-- **Einträge-Tab:** Alle gesammelten + analysierten Einträge (sortierbar, filterbar)
-- **Dump-Tab:** Eingabe für Ad-hoc-Links (YouTube, Reddit, URL)
-- **Quellen-Tab:** Verwaltung der Cron-Quellen (Subreddits, RSS-Feeds)
-
-## Datenmodell (SQLite)
-
-```sql
-CREATE TABLE sources (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  type TEXT NOT NULL,          -- 'subreddit', 'rss', 'youtube_channel'
-  url TEXT NOT NULL,           -- die Quelle
-  name TEXT,                   -- lesbarer Name
-  interval TEXT DEFAULT 'daily', -- Scan-Intervall
-  enabled INTEGER DEFAULT 1,
-  last_scanned_at TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE entries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_id INTEGER,           -- NULL bei Ad-hoc
-  source_type TEXT NOT NULL,   -- 'reddit', 'youtube', 'web', 'rss'
-  url TEXT NOT NULL UNIQUE,
-  title TEXT,
-  content TEXT,                -- extrahierter Inhalt / Transkript
-  author TEXT,
-  published_at TEXT,
-  analysis TEXT,               -- JSON: Relevanz, Takeaways, Handlungsoptionen
-  obsidian_note_path TEXT,     -- Pfad zur erstellten Obsidian-Note
-  status TEXT DEFAULT 'unread',-- 'unread', 'read', 'discussed'
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE analysis (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entry_id INTEGER NOT NULL,
-  relevance_score INTEGER,     -- 1-5
-  summary TEXT,                -- Kurzfassung (1-3 Sätze)
-  takeaways TEXT,              -- JSON-Array
-  action_items TEXT,           -- JSON-Array
-  obsidian_note TEXT,          -- Volltext der Obsidian-Note
-  created_at TEXT DEFAULT (datetime('now'))
-);
-```
-
-## API-Endpunkte
+## API-Endpunkte (neu/geändert gegenüber v2.1)
 
 | Endpunkt | Methode | Beschreibung |
 |----------|---------|-------------|
-| `/api/health` | GET | Health-Check |
-| `/api/entries` | GET | Alle Einträge (filterbar nach status, source) |
-| `/api/entries` | POST | Neuen Ad-hoc-Eintrag einreichen (URL + optional source_type) |
-| `/api/entries/:id` | GET | Detailansicht mit Analyse |
-| `/api/sources` | GET | Alle Cron-Quellen |
-| `/api/sources` | POST | Neue Quelle hinzufügen |
-| `/api/sources/:id` | DELETE | Quelle entfernen |
-| `/api/scan/now` | POST | Manuellen Scan anstoßen |
-| `/api/scan/status` | GET | Letzter Scan-Status + Timestamp |
-| `/api/cio/entries` | GET | Für Hermi-CIO: unread/analysierte Einträge |
-| `/api/cio/entries/:id` | PATCH | Status ändern (read, discussed) |
+| `GET /api/entries` | GET | Alle Einträge (filterbar nach status, source) |
+| `POST /api/entries` | POST | Neuen URL-Eintrag einreichen |
+| `GET /api/entries/:id` | GET | Detailansicht mit Analyse + stage_progress |
+| `PATCH /api/entries/:id` | PATCH | **NEU:** Hermes Agent schreibt Ergebnis zurück (Transkript, Analyse, Pfad, Status) |
+| `POST /api/entries/:id/kanban` | POST | **NEU:** Eintrag ins Kanban schicken (manuell) |
+| `GET /api/config` | GET | **NEU:** Aktuelle Einstellungen (automatik_an/aus) |
+| `PATCH /api/config` | PATCH | **NEU:** Einstellungen ändern |
+| *(entfällt)* | — | `POST /api/entries/:id/analyze` — entfällt (macht jetzt Kanban) |
+| *(entfällt)* | — | `POST /api/entries/:id/trilium` — entfällt (macht jetzt Kanban) |
 
-## Integration Hermi-CIO
+---
 
-Hermi-CIO bekommt einen neuen Tab "Weiterentwicklung":
+## Tabs (unverändert zu v2.1)
 
-1. Ruft `GET /api/cio/entries` von Trend-Radar auf
-2. Zeigt Liste der analysierten Einträge (Titel, Relevanz, Kurzfassung)
-3. Max klickt einen an → Detailansicht → kann mit CIO diskutieren
-4. CIO kann Status auf "discussed" setzen
+| Tab | Zweck |
+|-----|-------|
+| 📊 Status | Server-Health + Entry-Statistiken |
+| 📋 Einträge | Alle Einträge browsen / filtern — hier sieht Max die Karten mit Fortschritt |
+| 📋 Playlists | YouTube-Playlists verwalten |
+| 📨 Telegram | Telegram-Inbox verwalten |
+| 📥 Dump | URLs einwerfen (Haupt-Eingabe) |
+| 🎬 YouTube-Log | YouTube-Galerie mit Thumbnails |
 
-## Port & Stack
+---
 
-| | |
-|---|---|
-| **Port** | 9126 |
-| **Backend** | Python http.server (wie Hermi Hub, kein Flask) |
-| **Frontend** | Single-Page HTML/CSS/JS (Dark-Theme, Glas-Optik) |
-| **DB** | SQLite (WAL) in `data/trend-radar.db` |
-| **Repo** | `~/repos/trend-radar/` (GitHub: Klausthecrab/trend-radar) |
-| **Registry-Typ** | `service` |
-| **Start** | `python3 backend/server.py` |
+## Input-Quellen (alle unverändert)
 
-## Nächste Schritte (Phase 1)
+- **Browser-Extension** (Brave) — alle Tabs schließen + senden (#28-#31)
+- **Dump-Tab** (Web-UI) — URLs per Textarea einwerfen
+- **Telegram-Bot** — URL an Bot schicken → Telegram-Inbox
+- **YouTube-Playlists** — Playlist scannen → Videos browsen → übernehmen
 
-1. Backend-Server mit Health-Endpoint + SQLite-Schema
-2. Cron-Scanner für RSS-Feeds (via feedparser oder requests + HTML-Parsing)
-3. Dump-Endpoint (POST URL → Analyse-Pipeline)
-4. Frontend: Status + Einträge-Tab
-5. GitHub Repo + Obsidian-Doku
-6. Hermi-CIO Integration (Tab "Weiterentwicklung")
+Alle münden in `POST /api/entries` → landen in der Einträge-Tabelle. Kein Unterschied im Backend, nur unterschiedliche Frontend-Wege.
+
+---
+
+## Nächste Schritte (Umsetzung)
+
+1. ⬜ **Kanban-API** — `POST /api/entries/:id/kanban` + `PATCH /api/entries/:id` (#33)
+2. ⬜ **Automatik-Schalter im UI** — Toggle + Config-Endpoint (#34)
+3. ⬜ **Manuell-Button pro Eintrag** — "📤 Ins Kanban" (#35)
+4. ⬜ **Phasen-Fortschritt im UI** — Balken + Icons pro Karte (#36)
+5. ⬜ **YouTube-Route** — source_type=youtube → eigener Stufen-Pfad (#37)
+6. ⬜ **Hermes Skill: Trend-Radar-Analyse** — Der Kanban-Skill (#38)
+7. ⬜ **Alte Analyse-Threads entfernen** — pre_analyze + analyze aus server.py raus

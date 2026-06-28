@@ -9,7 +9,7 @@ import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, DB_PATH
+from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, get_config, set_config, init_stage_progress, DB_PATH
 from trilium import RESOURCES_NOTE_ID, get_resources_structure, format_structure_for_llm
 
 def _detect_source_type(url: str) -> str:
@@ -20,6 +20,27 @@ def _detect_source_type(url: str) -> str:
     if "reddit.com" in url_lower:
         return "reddit"
     return "web"
+
+
+def _send_to_kanban(entry_id):
+    """Set processing_step to the first stage based on source_type.
+    This is equivalent to 'pushing the entry to the Kanban'."""
+    db = get_db()
+    try:
+        row = db.execute("SELECT source_type, status FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return
+        source_type = row["source_type"]
+        if source_type == "youtube":
+            db.execute("UPDATE entries SET status = 'transcribing', processing_step = 'extracting' WHERE id = ?",
+                       (entry_id,))
+        else:
+            db.execute("UPDATE entries SET status = 'analyzing', processing_step = 'analyzing' WHERE id = ?",
+                       (entry_id,))
+        db.commit()
+        print(f"📤 Entry #{entry_id} ({source_type}) ins Kanban geschickt — processing_step gesetzt")
+    finally:
+        db.close()
 
 
 def _fetch_page_meta(url: str) -> dict:
@@ -256,6 +277,113 @@ def _analyze_and_suggest(entry_id: int, entry: dict):
     print(f"✅ Entry #{entry_id} ist bereit für Trilium-Ablage")
 
 
+# ─── Telegram Bot Poller ─────────────────────────────
+
+TELEGRAM_API = "https://api.telegram.org/bot"
+POLL_INTERVAL = 180  # 3 Minuten
+
+def _load_telegram_token() -> str:
+    """Load Telegram bot token from data/telegram-bot-token.txt"""
+    token_path = ROOT / "data" / "telegram-bot-token.txt"
+    try:
+        if token_path.exists():
+            return token_path.read_text().strip()
+    except Exception as e:
+        print(f"⚠️  Telegram-Token Fehler: {e}")
+    return ""
+
+
+def _extract_urls(text: str) -> list[str]:
+    """Extract http/https URLs from text."""
+    import re
+    return re.findall(r'https?://[^\s<>"\']+', text)
+
+
+def _save_telegram_url(url: str, sender_name: str, message_id: int, chat_id: int):
+    """Save a Telegram URL to the inbox table."""
+    db = get_db()
+    try:
+        existing = db.execute(
+            "SELECT id FROM telegram_inbox WHERE message_id = ? AND chat_id = ?",
+            (message_id, chat_id)
+        ).fetchone()
+        if existing:
+            return existing["id"]
+        db.execute(
+            "INSERT OR IGNORE INTO telegram_inbox (url, sender_name, message_id, chat_id) VALUES (?, ?, ?, ?)",
+            (url, sender_name, message_id, chat_id)
+        )
+        db.commit()
+        row = db.execute("SELECT id FROM telegram_inbox WHERE message_id = ? AND chat_id = ?",
+                         (message_id, chat_id)).fetchone()
+        return row["id"] if row else None
+    finally:
+        db.close()
+
+
+def _telegram_poller():
+    """Periodically fetch new messages from Telegram bot and save URLs."""
+    last_update_id = 0
+    token = _load_telegram_token()
+    if not token:
+        print("⚠️  Kein Telegram-Token — Poller deaktiviert")
+        return
+
+    print(f"📨 Telegram-Poller gestartet (Intervall: {POLL_INTERVAL}s)")
+    while True:
+        try:
+            import urllib.request
+            import json
+            url = f"{TELEGRAM_API}{token}/getUpdates?offset={last_update_id + 1}&timeout=30"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=35) as resp:
+                data = json.loads(resp.read())
+
+            if data.get("ok"):
+                for update in data.get("result", []):
+                    update_id = update.get("update_id", 0)
+                    if update_id > last_update_id:
+                        last_update_id = update_id
+
+                    msg = update.get("message", {})
+                    if not msg:
+                        continue
+
+                    text = msg.get("text", "") or msg.get("caption", "")
+                    if not text:
+                        continue
+
+                    urls = _extract_urls(text)
+                    if not urls:
+                        continue
+
+                    chat_id = msg.get("chat", {}).get("id", 0)
+                    message_id = msg.get("message_id", 0)
+                    sender = msg.get("from", {}).get("first_name", "Unbekannt")
+
+                    for found_url in urls:
+                        _save_telegram_url(found_url, sender, message_id, chat_id)
+
+                    # Reply to user: acknowledge receipt
+                    reply_url = f"{TELEGRAM_API}{token}/sendMessage"
+                    reply_data = json.dumps({
+                        "chat_id": chat_id,
+                        "text": "✅ Erhalten! Wird in Trend Radar verarbeitet.",
+                        "reply_to_message_id": message_id,
+                    }).encode()
+                    reply_req = urllib.request.Request(reply_url, data=reply_data,
+                                                       headers={"Content-Type": "application/json"})
+                    try:
+                        urllib.request.urlopen(reply_req, timeout=10)
+                    except Exception:
+                        pass
+
+            time.sleep(POLL_INTERVAL)
+        except Exception as e:
+            print(f"⚠️  Telegram-Poller Fehler: {e}")
+            time.sleep(60)
+
+
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
 FRONTEND = ROOT / "frontend"
@@ -293,6 +421,11 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json({"status": "ok", "port": PORT})
             return
 
+        if path == "/api/config":
+            automatik = get_config("automatik_an", "true")
+            self._send_json({"automatik_an": automatik == "true"})
+            return
+
         if path == "/api/stats":
             db = get_db()
             total = db.execute("SELECT COUNT(*) as cnt FROM entries").fetchone()["cnt"]
@@ -317,6 +450,11 @@ class Handler(SimpleHTTPRequestHandler):
                     if entry.get("analysis"):
                         try:
                             entry["analysis"] = json.loads(entry["analysis"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    if entry.get("stage_progress"):
+                        try:
+                            entry["stage_progress"] = json.loads(entry["stage_progress"])
                         except (json.JSONDecodeError, TypeError):
                             pass
                     self._send_json(entry)
@@ -351,6 +489,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if e.get("analysis"):
                     try:
                         e["analysis"] = json.loads(e["analysis"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if e.get("stage_progress"):
+                    try:
+                        e["stage_progress"] = json.loads(e["stage_progress"])
                     except (json.JSONDecodeError, TypeError):
                         pass
             db.close()
@@ -413,6 +556,31 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(playlists)
             return
 
+        # --- Telegram Inbox API (GET) ---
+        if path.startswith("/api/telegram/inbox/stats"):
+            db = get_db()
+            new_count = db.execute("SELECT COUNT(*) as cnt FROM telegram_inbox WHERE status='new'").fetchone()["cnt"]
+            added_count = db.execute("SELECT COUNT(*) as cnt FROM telegram_inbox WHERE status='added'").fetchone()["cnt"]
+            dismissed_count = db.execute("SELECT COUNT(*) as cnt FROM telegram_inbox WHERE status='dismissed'").fetchone()["cnt"]
+            total = db.execute("SELECT COUNT(*) as cnt FROM telegram_inbox").fetchone()["cnt"]
+            db.close()
+            self._send_json({"total": total, "new": new_count, "added": added_count, "dismissed": dismissed_count})
+            return
+
+        if path == "/api/telegram/inbox":
+            db = get_db()
+            status_filter = params.get("status", [None])[0]
+            query = "SELECT * FROM telegram_inbox"
+            args = []
+            if status_filter:
+                query += " WHERE status = ?"
+                args.append(status_filter)
+            query += " ORDER BY created_at DESC"
+            rows = db.execute(query, args).fetchall()
+            db.close()
+            self._send_json([dict(r) for r in rows])
+            return
+
         # --- CIO API ---
         if path == "/api/cio/entries":
             db = get_db()
@@ -458,8 +626,8 @@ class Handler(SimpleHTTPRequestHandler):
             db = get_db()
             try:
                 db.execute(
-                    "INSERT OR IGNORE INTO entries (source_type, url, title, status) VALUES (?, ?, ?, 'new')",
-                    (source_type, url, title)
+                    "INSERT OR IGNORE INTO entries (source_type, url, title, status, stage_progress) VALUES (?, ?, ?, 'new', ?)",
+                    (source_type, url, title, init_stage_progress(source_type))
                 )
                 db.commit()
                 entry_row = db.execute("SELECT id, source_type FROM entries WHERE url = ?", (url,)).fetchone()
@@ -474,6 +642,18 @@ class Handler(SimpleHTTPRequestHandler):
                         daemon=True
                     ).start()
 
+                    # Automatik AN: Eintrag direkt ins Kanban schicken
+                    automatik = get_config("automatik_an", "true")
+                    if automatik == "true":
+                        def _auto_kanban(eid):
+                            import json, urllib.request
+                            try:
+                                _send_to_kanban(eid)
+                                print(f"🤖 Automatik: Entry #{eid} ins Kanban geschickt")
+                            except Exception as ex:
+                                print(f"⚠️  Automatik-Kanban Fehler für #{eid}: {ex}")
+                        threading.Thread(target=_auto_kanban, args=(entry_id,), daemon=True).start()
+
                     self._send_json({"id": entry_id, "message": "Eintrag erstellt"}, 201)
                 else:
                     self._send_json({"message": "Eintrag existiert bereits"}, 200)
@@ -481,6 +661,25 @@ class Handler(SimpleHTTPRequestHandler):
                 db.close()
                 self._send_json({"error": str(e)}, 500)
             return
+
+        # POST /api/entries/:id/kanban — Eintrag ins Kanban schicken
+        if path.startswith("/api/entries/") and path.endswith("/kanban"):
+            parts = path.split("/")
+            if len(parts) == 5:
+                entry_id = parts[3]
+                db = get_db()
+                row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                db.close()
+                if not row:
+                    self._send_json({"error": "Entry not found"}, 404)
+                    return
+                entry = dict(row)
+                if entry["status"] not in ("new", "pre_analyzed"):
+                    self._send_json({"error": f"Kanban nur für new/pre_analyzed möglich, aktuell: {entry['status']}"}, 400)
+                    return
+                _send_to_kanban(entry_id)
+                self._send_json({"message": f"Entry #{entry_id} ins Kanban geschickt", "status": "kanban"})
+                return
 
         # POST /api/entries/:id/analyze — LLM-Analyse starten (nur pre_analyzed)
         if path.startswith("/api/entries/") and path.endswith("/analyze"):
@@ -787,6 +986,179 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json({"results": results, "total": len(results)}, 201)
             return
 
+        # --- Telegram Inbox API (POST) ---
+
+        # POST /api/telegram/inbox/check — Sofortigen Poll triggern
+        if path == "/api/telegram/inbox/check":
+            # Run poll in a background thread so request doesn't hang
+            def _manual_poll():
+                token = _load_telegram_token()
+                if not token:
+                    return
+                import urllib.request, json
+                try:
+                    url = f"{TELEGRAM_API}{token}/getUpdates?offset=0&timeout=10"
+                    req = urllib.request.Request(url)
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = json.loads(resp.read())
+                    if data.get("ok"):
+                        for update in data.get("result", []):
+                            msg = update.get("message", {})
+                            if not msg:
+                                continue
+                            text = msg.get("text", "") or msg.get("caption", "")
+                            if not text:
+                                continue
+                            urls = _extract_urls(text)
+                            if not urls:
+                                continue
+                            chat_id = msg.get("chat", {}).get("id", 0)
+                            message_id = msg.get("message_id", 0)
+                            sender = msg.get("from", {}).get("first_name", "Unbekannt")
+                            for found_url in urls:
+                                _save_telegram_url(found_url, sender, message_id, chat_id)
+                            reply_url = f"{TELEGRAM_API}{token}/sendMessage"
+                            reply_data = json.dumps({
+                                "chat_id": chat_id,
+                                "text": "✅ Erhalten! Wird in Trend Radar verarbeitet.",
+                                "reply_to_message_id": message_id,
+                            }).encode()
+                            reply_req = urllib.request.Request(reply_url, data=reply_data,
+                                                               headers={"Content-Type": "application/json"})
+                            try:
+                                urllib.request.urlopen(reply_req, timeout=10)
+                            except Exception:
+                                pass
+                except Exception as e:
+                    print(f"⚠️  Manueller Telegram-Poll Fehler: {e}")
+
+            threading.Thread(target=_manual_poll, daemon=True).start()
+            self._send_json({"message": "Telegram-Poll gestartet"})
+            return
+
+        # POST /api/telegram/inbox/bulk/add — Mehrere IDs auf einmal übernehmen
+        if path == "/api/telegram/inbox/bulk/add":
+            body = self._read_body()
+            ids = body.get("ids", [])
+            if not ids:
+                self._send_json({"error": "ids array is required"}, 400)
+                return
+            results = []
+            db = get_db()
+            for inbox_id in ids:
+                row = db.execute("SELECT * FROM telegram_inbox WHERE id = ?", (inbox_id,)).fetchone()
+                if not row:
+                    results.append({"id": inbox_id, "status": "error", "error": "Not found"})
+                    continue
+                inbox_item = dict(row)
+                url = inbox_item["url"]
+
+                existing = db.execute("SELECT id FROM entries WHERE url = ?", (url,)).fetchone()
+                if existing:
+                    entry_id = existing["id"]
+                    db.execute(
+                        "UPDATE telegram_inbox SET status = 'added', entry_id = ? WHERE id = ?",
+                        (entry_id, inbox_id)
+                    )
+                    results.append({"id": inbox_id, "status": "exists", "entry_id": entry_id})
+                    continue
+
+                source_type = _detect_source_type(url)
+                title = inbox_item.get("title", "")
+                db.execute(
+                    "INSERT INTO entries (source_type, url, title, status) VALUES (?, ?, ?, 'new')",
+                    (source_type, url, title)
+                )
+                db.commit()
+                entry_row = db.execute("SELECT id FROM entries WHERE url = ?", (url,)).fetchone()
+                entry_id = entry_row["id"] if entry_row else None
+
+                if entry_id:
+                    db.execute(
+                        "UPDATE telegram_inbox SET status = 'added', entry_id = ? WHERE id = ?",
+                        (entry_id, inbox_id)
+                    )
+                    db.commit()
+                    threading.Thread(target=_preanalyze_entry, args=(entry_id,), daemon=True).start()
+                    results.append({"id": inbox_id, "status": "added", "entry_id": entry_id})
+                else:
+                    results.append({"id": inbox_id, "status": "error", "error": "Entry creation failed"})
+            db.commit()
+            db.close()
+            self._send_json({"results": results, "total": len(results)}, 201)
+            return
+
+        # POST /api/telegram/inbox/:id/dismiss — Eintrag ignorieren
+        if path.startswith("/api/telegram/inbox/") and path.endswith("/dismiss"):
+            parts = path.split("/")
+            if len(parts) == 6:
+                inbox_id = parts[4]
+                if inbox_id == "bulk":
+                    self._send_json({"error": "Not Found"}, 404)
+                    return
+                db = get_db()
+                db.execute("UPDATE telegram_inbox SET status = 'dismissed' WHERE id = ?", (inbox_id,))
+                db.commit()
+                db.close()
+                self._send_json({"message": "Eintrag ignoriert", "status": "dismissed"})
+                return
+
+        # POST /api/telegram/inbox/:id/add — Als Trend-Radar-Eintrag übernehmen
+        if path.startswith("/api/telegram/inbox/") and path.endswith("/add"):
+            parts = path.split("/")
+            if len(parts) == 6:
+                inbox_id = parts[4]
+                db = get_db()
+                row = db.execute("SELECT * FROM telegram_inbox WHERE id = ?", (inbox_id,)).fetchone()
+                if not row:
+                    db.close()
+                    self._send_json({"error": "Not Found"}, 404)
+                    return
+                inbox_item = dict(row)
+                url = inbox_item["url"]
+
+                # Check if URL already exists in entries
+                existing = db.execute("SELECT id FROM entries WHERE url = ?", (url,)).fetchone()
+                if existing:
+                    entry_id = existing["id"]
+                    db.execute(
+                        "UPDATE telegram_inbox SET status = 'added', entry_id = ? WHERE id = ?",
+                        (entry_id, inbox_id)
+                    )
+                    db.commit()
+                    db.close()
+                    self._send_json({"id": entry_id, "message": "Eintrag existiert bereits, verlinkt"})
+                    return
+
+                # Create new entry
+                source_type = _detect_source_type(url)
+                title = inbox_item.get("title", "")
+                db.execute(
+                    "INSERT INTO entries (source_type, url, title, status) VALUES (?, ?, ?, 'new')",
+                    (source_type, url, title)
+                )
+                db.commit()
+                entry_row = db.execute("SELECT id FROM entries WHERE url = ?", (url,)).fetchone()
+                entry_id = entry_row["id"] if entry_row else None
+
+                if entry_id:
+                    db.execute(
+                        "UPDATE telegram_inbox SET status = 'added', entry_id = ? WHERE id = ?",
+                        (entry_id, inbox_id)
+                    )
+                    db.commit()
+                    # Start pre-analysis
+                    threading.Thread(target=_preanalyze_entry, args=(entry_id,), daemon=True).start()
+
+                db.close()
+
+                self._send_json({
+                    "id": entry_id,
+                    "status": "added",
+                    "message": f"URL als Eintrag #{entry_id} übernommen, Pre-Analyse gestartet"
+                }, 201)
+                return
+
         self._send_json({"error": "Not Found"}, 404)
 
     def do_PUT(self):
@@ -825,6 +1197,68 @@ class Handler(SimpleHTTPRequestHandler):
     def do_PATCH(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        # PATCH /api/config — Settings ändern
+        if path == "/api/config":
+            body = self._read_body()
+            if "automatik_an" in body:
+                val = "true" if body["automatik_an"] else "false"
+                set_config("automatik_an", val)
+                self._send_json({"automatik_an": body["automatik_an"]})
+                return
+            self._send_json({"error": "No valid fields"}, 400)
+            return
+
+        # PATCH /api/entries/:id — Hermes Agent schreibt Ergebnisse zurück
+        if path.startswith("/api/entries/"):
+            parts = path.split("/")
+            if len(parts) == 4:
+                entry_id = parts[3]
+                body = self._read_body()
+                db = get_db()
+                row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                if not row:
+                    db.close()
+                    self._send_json({"error": "Not Found"}, 404)
+                    return
+
+                updates = []
+                args = []
+                for field in ("status", "content", "analysis", "trilium_suggested_path",
+                              "trilium_note_id", "trilium_target_note_id", "stage_progress"):
+                    if field in body:
+                        val = body[field]
+                        if isinstance(val, (dict, list)):
+                            val = json.dumps(val)
+                        updates.append(f"{field} = ?")
+                        args.append(val)
+                if updates:
+                    updates.append("processing_step = NULL")
+                    args.append(entry_id)
+                    db.execute(
+                        f"UPDATE entries SET {', '.join(updates)} WHERE id = ?",
+                        tuple(args)
+                    )
+                    db.commit()
+                db.close()
+
+                # Return updated entry
+                db2 = get_db()
+                updated = db2.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                db2.close()
+                entry = dict(updated)
+                if entry.get("analysis"):
+                    try:
+                        entry["analysis"] = json.loads(entry["analysis"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if entry.get("stage_progress"):
+                    try:
+                        entry["stage_progress"] = json.loads(entry["stage_progress"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                self._send_json(entry)
+                return
 
         # /api/cio/entries/:id
         if path.startswith("/api/cio/entries/"):
@@ -881,6 +1315,10 @@ def main():
         seed_dummy_data()
     else:
         migrate_db()  # non-destructive upgrades
+
+    # Start Telegram poller in background thread
+    polling_thread = threading.Thread(target=_telegram_poller, daemon=True)
+    polling_thread.start()
 
     server = HTTPServer(("0.0.0.0", PORT), Handler)
     print(f"🚀 Trend-Radar läuft auf http://0.0.0.0:{PORT}")

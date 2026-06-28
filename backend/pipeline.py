@@ -9,7 +9,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from analysis import analyze_with_llm, generate_obsidian_note
+from analysis import analyze_with_llm
 
 HERE = Path(__file__).parent.resolve()
 ROOT = HERE.parent
@@ -202,7 +202,7 @@ def _transcribe_urllib(audio_path: str) -> str | None:
 
 
 def analyze_entry(title: str, content: str, source_type: str, language: str = "de", entry_id: int = None) -> dict | None:
-    """Analyze an entry using Venice LLM. Returns {relevance, summary, takeaways, action_items, obsidian_note}."""
+    """Analyze an entry using Venice LLM. Returns {relevance, summary, takeaways, action_items}."""
     print(f"🔍 LLM-Analyse für: {title[:60]}... (Sprache: {language})")
     analysis = analyze_with_llm(title, content, source_type, language=language)
     if not analysis:
@@ -259,17 +259,6 @@ def process_youtube(url: str, title: str = "", entry_id: int | None = None) -> d
     result["analysis"] = analysis
     result["status"] = "analyzed"
 
-    # Step 4: Generate Obsidian note
-    if analysis:
-        _update_step(entry_id, "note")
-        note_path = generate_obsidian_note(
-            {"id": "?", "title": title or url, "url": url,
-             "source_type": "youtube", "language": video_language},
-            analysis
-        )
-        if note_path:
-            result["obsidian_note"] = note_path
-
     print(f"✅ YouTube-Pipeline abgeschlossen (Relevanz: {analysis.get('relevance', '?')}/5)")
     print(f"{'='*50}")
     return result
@@ -301,25 +290,14 @@ def process_url(url: str, source_type: str, title: str = "",
         _update_step(entry_id, "analyzing")
         analysis = analyze_entry(title, preloaded_content, source_type, entry_id=None)
 
-        _update_step(entry_id, "note")
-        note_path = None
-        if analysis:
-            note_path = generate_obsidian_note(
-                {"id": entry_id, "title": title, "url": url, "source_type": source_type},
-                analysis
-            )
         _update_step(entry_id, "saving")
 
         # Store in DB
-        if analysis or note_path:
+        if analysis:
             db = get_db()
             try:
-                if analysis:
-                    db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
-                               (json.dumps(analysis), entry_id))
-                if note_path:
-                    db.execute("UPDATE entries SET obsidian_note_path = ? WHERE id = ?",
-                               (note_path, entry_id))
+                db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
+                           (json.dumps(analysis), entry_id))
                 if not db.execute("SELECT content FROM entries WHERE id = ?", (entry_id,)).fetchone()["content"]:
                     db.execute("UPDATE entries SET content = ? WHERE id = ?",
                                (preloaded_content[:5000], entry_id))
@@ -334,7 +312,6 @@ def process_url(url: str, source_type: str, title: str = "",
             "url": url,
             "title": title,
             "analysis": analysis,
-            "obsidian_note": note_path,
         }
 
     # Fallback: no content, just acknowledge

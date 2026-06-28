@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""LLM-Analyse-Pipeline: Venice Chat API + Obsidian-Notiz-Generierung."""
+"""LLM-Analyse-Pipeline: Venice Chat API + Trilium-Pfad-Vorschlag."""
 
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).parent.resolve()
@@ -11,17 +10,8 @@ ROOT = HERE.parent
 
 VENICE_API = "https://api.venice.ai/api/v1/chat/completions"
 VENICE_KEY = os.environ.get("AUXILIARY_VISION_API_KEY", "")
-OBSIDIAN_VAULT = Path.home() / "obsidian-vaults" / "osb"
-RES_DIR = OBSIDIAN_VAULT / "07 - _ressources" / "trend-radar"
 
 MODEL = "deepseek-v4-flash"
-
-SOURCE_PREFIXES = {
-    "youtube": "yt",
-    "reddit": "rd",
-    "rss": "rss",
-    "web": "web",
-}
 
 
 def analyze_with_llm(title: str, content: str, source_type: str, language: str = "de") -> dict:
@@ -142,82 +132,124 @@ Regeln/Rules:
         return None
 
 
-def generate_obsidian_note(entry: dict, analysis: dict) -> str | None:
-    """Generate an Obsidian note with neutral explanations (no checkboxes).
-
-    Filename format: yt: Titel / rd: Titel / rss: Titel
-    Content: topics with what_is, homelab_value, hermi_value.
-
-    Returns the relative path within the vault.
+def suggest_trilium_path(title: str, analysis: dict, resources_tree: str, language: str = "de") -> dict:
+    """Ask the LLM to suggest a target Trilium path (1-3 levels, existing folders only).
+    
+    Resources tree is passed as context so the LLM only picks from existing folders.
+    Returns: {"path": "📚 Resources > ...", "noteId": "dK4MRXl5jhaC"} 
+             or {"path": "📚 Resources", "noteId": "dK4MRXl5jhaC"} (level 1 only)
     """
-    title = entry.get("title", "Unbekannter Eintrag")
-    url = entry.get("url", "")
-    source_type = entry.get("source_type", "web")
-    today = datetime.now().strftime("%Y-%m-%d")
+    from trilium import RESOURCES_NOTE_ID
+    
+    is_german = language == "de"
+    
+    if is_german:
+        prompt = f"""Du wählst einen existierenden Ordner-Pfad in Trilium für einen Trend-Radar-Eintrag.
 
-    # Build prefixed title
-    prefix = SOURCE_PREFIXES.get(source_type, "web")
-    display_title = f"{prefix}: {title}"
-    safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in display_title)[:70]
+**Titel:** {title}
+**Relevanz:** {analysis.get('relevance', 1)}/5
+**Zusammenfassung:** {analysis.get('summary', '')}
+**Topics:**
+{json.dumps(analysis.get('topics', []), indent=2, ensure_ascii=False)}
 
-    # Clean unsafe chars from filename
-    safe_title = safe_title.replace(":", "_").replace("/", "_")
-    filename = f"{today} - {safe_title}.md"
-    filepath = RES_DIR / filename
+**Existierende Ordner-Struktur (nur diese Ordner sind verfügbar):**
+{resources_tree}
 
-    relevance = analysis.get("relevance", 1)
-    relevance_stars = "⭐" * relevance
-    summary = analysis.get("summary", "")
-    topics = analysis.get("topics", [])
+**Regeln:**
+- Wähle AUSSCHLIESSLICH aus den existierenden Ordnern — schlage KEINE neuen Ordner vor
+- Maximal 3 Ebenen tief: Ebene 1 = immer 📚 Resources, Ebene 2-3 = existierende Child-Ordner
+- Wenn kein passender Theme-Ordner existiert → bleib bei Ebene 1 (📚 Resources)
+- Der Pfad muss einem der existierenden noteIds entsprechen
 
-    # Build content
-    lang_tag = entry.get("language", "de")
-    content = f"""---
-title: {display_title}
-source: {source_type}
-url: {url}
-relevance: {relevance}/5
-language: {lang_tag}
-created: {today}
-tags: [trend-radar, {source_type}, {lang_tag}]
----
+Antworte NUR mit einem JSON-Objekt:
+{{
+  "path": "📚 Resources > Software & digitales > Homelab",
+  "noteId": "bci6Tmwj7iMh"
+}}
+Oder bei nur Ebene 1:
+{{
+  "path": "📚 Resources",
+  "noteId": "dK4MRXl5jhaC"
+}}"""
+    else:
+        prompt = f"""You select an existing folder path in Trilium for a Trend Radar entry.
 
-# {display_title}
+**Title:** {title}
+**Relevance:** {analysis.get('relevance', 1)}/5
+**Summary:** {analysis.get('summary', '')}
+**Topics:**
+{json.dumps(analysis.get('topics', []), indent=2, ensure_ascii=False)}
 
-**Quelle:** [{url}]({url})
-**Relevanz:** {relevance_stars} ({relevance}/5)
-**Datum:** {today}
+**Available folder structure (pick from these only):**
+{resources_tree}
 
-## Zusammenfassung
+**Rules:**
+- Pick ONLY from existing folders — do NOT suggest new folders
+- Max 3 levels deep: Level 1 = always 📚 Resources, Level 2-3 = existing children
+- If no matching theme folder exists → stay at Level 1 (📚 Resources)
+- The path must match an existing noteId
 
-{summary}
+Respond ONLY with a JSON object:
+{{
+  "path": "📚 Resources > Software & digitales > Homelab",
+  "noteId": "bci6Tmwj7iMh"
+}}
+Or for level 1 only:
+{{
+  "path": "📚 Resources",
+  "noteId": "dK4MRXl5jhaC"
+}}"""
 
-## Analyse
+    if not VENICE_KEY:
+        print("⚠️  Kein Venice API-Key — Trilium-Pfad-Vorschlag deaktiviert")
+        return {"path": "📚 Resources", "noteId": RESOURCES_NOTE_ID}
 
-"""
-
-    for t in topics:
-        content += f"""### {t.get('name', 'Thema')}
-
-**Was ist das?** {t.get('what_is', '—')}
-
-**Mehrwert für Homelab:** {t.get('homelab_value', '—')}
-
-**Mehrwert für Hermi/KI:** {t.get('hermi_value', '—')}
-
-"""
-
-    content += "---\n*Automatisch erstellt von Trend-Radar*\n"
+    payload = {
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": "Du wählst Ordner-Pfade und antwortest NUR mit JSON."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 1024,
+    }
 
     try:
-        RES_DIR.mkdir(parents=True, exist_ok=True)
-        filepath.write_text(content, encoding="utf-8")
-        rel_path = str(filepath.relative_to(OBSIDIAN_VAULT))
-        print(f"✅ Obsidian-Note: {rel_path}")
-        return rel_path
+        import httpx
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(
+                VENICE_API,
+                headers={
+                    "Authorization": f"Bearer {VENICE_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+        if resp.status_code != 200:
+            print(f"❌ LLM-API Fehler {resp.status_code}: {resp.text[:300]}")
+            return {"path": "📚 Resources", "noteId": RESOURCES_NOTE_ID}
+
+        result = resp.json()
+        raw = result["choices"][0]["message"]["content"]
+
+        if "```json" in raw:
+            raw = raw.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw:
+            raw = raw.split("```")[1].split("```")[0].strip()
+
+        suggestion = json.loads(raw)
+        path = suggestion.get("path", "📚 Resources")
+        note_id = suggestion.get("noteId", RESOURCES_NOTE_ID)
+        print(f"✅ Trilium-Pfad-Vorschlag: {path} ({note_id})")
+        return {"path": path, "noteId": note_id}
+
+    except json.JSONDecodeError as e:
+        print(f"❌ LLM-Pfad-Antwort kein gültiges JSON: {e}")
+        print(f"   Roh: {raw[:300]}")
+        return {"path": "📚 Resources", "noteId": RESOURCES_NOTE_ID}
     except Exception as e:
-        print(f"❌ Obsidian-Note fehlgeschlagen: {e}")
-        return None
+        print(f"❌ LLM-Pfad-Fehler: {e}")
+        return {"path": "📚 Resources", "noteId": RESOURCES_NOTE_ID}
 
 
 if __name__ == "__main__":
@@ -232,5 +264,3 @@ if __name__ == "__main__":
     a = analyze_with_llm(test["title"], test["content"], test["source_type"])
     if a:
         print(json.dumps(a, indent=2, ensure_ascii=False))
-        note = generate_obsidian_note(test, a)
-        print(f"Note: {note}")
