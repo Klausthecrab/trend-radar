@@ -3,6 +3,8 @@
 
 import json
 import os
+import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -11,6 +13,11 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, get_config, set_config, init_stage_progress, DB_PATH
 from trilium import RESOURCES_NOTE_ID, get_resources_structure, format_structure_for_llm
+
+# Kanban board configuration
+KANBAN_BOARD_SLUG = "trend-radar"
+KANBAN_BOARD_PATH = Path(os.path.expanduser("~/.hermes/kanban.db"))
+KANBAN_BOARD_COLUMNS = ["todo", "ready", "running", "review", "done"]
 
 def _detect_source_type(url: str) -> str:
     """Detect source type from URL."""
@@ -369,6 +376,161 @@ def _update_entry_status(entry_id, new_status):
         db.commit()
     finally:
         db.close()
+
+
+def _ensure_kanban_board():
+    """Create the trend-radar kanban board if it doesn't exist (idempotent).
+    Returns True when the board exists or was successfully created."""
+    board_dir = Path(os.path.expanduser(f"~/.hermes/kanban/boards/{KANBAN_BOARD_SLUG}"))
+    if board_dir.exists():
+        return True
+    try:
+        result = subprocess.run(
+            ["hermes", "kanban", "boards", "create", KANBAN_BOARD_SLUG],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            print(f"📋 Kanban-Board '{KANBAN_BOARD_SLUG}' erstellt")
+            return True
+        print(f"⚠️  Kanban-Board-Erstellung fehlgeschlagen: {result.stderr[:200]}")
+        return False
+    except Exception as e:
+        print(f"⚠️  Kanban-Board-Erstellung Exception: {e}")
+        return False
+
+
+def _get_kanban_board_state() -> dict:
+    """Read trend-radar Kanban tasks from the main kanban.db and return formatted JSON.
+
+    Tasks are identified by title prefix '📡 Trend Radar'.
+    Each card has: id, entry_id, title, column, stage_progress, timestamps, seconds_in_column.
+    """
+    column_map = {
+        "archived": "done",
+        "blocked": "review",
+        "scheduled": "todo",
+        "triage": "todo",
+    }
+
+    # Ensure the board metadata exists
+    _ensure_kanban_board()
+
+    if not KANBAN_BOARD_PATH.exists():
+        return {
+            "board": KANBAN_BOARD_SLUG,
+            "columns": KANBAN_BOARD_COLUMNS,
+            "board_created": False,
+            "cards": [],
+        }
+
+    try:
+        db = sqlite3.connect(str(KANBAN_BOARD_PATH))
+        db.row_factory = sqlite3.Row
+        tasks = db.execute(
+            "SELECT id, title, body, assignee, status, priority, "
+            "created_at, started_at, completed_at, result, session_id "
+            "FROM tasks "
+            "WHERE title LIKE '📡 Trend Radar%' "
+            "ORDER BY priority DESC, created_at DESC"
+        ).fetchall()
+        db.close()
+    except Exception as e:
+        print(f"⚠️  Kanban-DB-Lesen Fehler: {e}")
+        return {
+            "board": KANBAN_BOARD_SLUG,
+            "columns": KANBAN_BOARD_COLUMNS,
+            "error": str(e),
+            "cards": [],
+        }
+
+    now = time.time()
+    cards = []
+
+    # Cache for entry lookups
+    entry_cache = {}
+
+    def _get_entry(entry_id):
+        if entry_id not in entry_cache:
+            try:
+                edb = get_db()
+                row = edb.execute(
+                    "SELECT id, stage_progress, status, source_type FROM entries WHERE id = ?",
+                    (entry_id,)
+                ).fetchone()
+                edb.close()
+                entry_cache[entry_id] = dict(row) if row else None
+            except Exception:
+                entry_cache[entry_id] = None
+        return entry_cache[entry_id]
+
+    for task in tasks:
+        task = dict(task)
+        tid = task["id"]
+        title = task.get("title", "")
+        status = task.get("status", "todo")
+
+        # Map status to column
+        column = column_map.get(status, status)
+        if column not in KANBAN_BOARD_COLUMNS:
+            column = "todo"  # Fallback
+
+        # Extract entry_id from title: "📡 Trend Radar | Eintrag #42 | Schritt: analyze"
+        entry_id = None
+        import re
+        m = re.search(r"Eintrag #(\d+)", title)
+        if m:
+            entry_id = int(m.group(1))
+
+        # Get stage_progress from trend-radar entries DB
+        stage_progress = None
+        if entry_id:
+            entry = _get_entry(entry_id)
+            if entry and entry.get("stage_progress"):
+                try:
+                    stage_progress = json.loads(entry["stage_progress"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        # Timestamps (all in Unix seconds from kanban)
+        created_at = task.get("created_at")
+        started_at = task.get("started_at")
+        completed_at = task.get("completed_at")
+
+        # seconds_in_column: based on the most relevant timestamp
+        if column in ("done",) and completed_at and started_at:
+            seconds_in_column = completed_at - started_at
+        elif column in ("running", "review") and started_at:
+            seconds_in_column = int(now - started_at)
+        elif created_at:
+            seconds_in_column = int(now - created_at)
+        else:
+            seconds_in_column = 0
+
+        # Format timestamps for JSON
+        def _fmt_ts(ts):
+            if ts:
+                import datetime
+                return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat()
+            return None
+
+        card = {
+            "id": tid,
+            "entry_id": entry_id,
+            "title": title,
+            "column": column,
+            "stage_progress": stage_progress,
+            "created_at": _fmt_ts(created_at),
+            "updated_at": _fmt_ts(started_at or created_at),
+            "seconds_in_column": seconds_in_column,
+        }
+        cards.append(card)
+
+    return {
+        "board": KANBAN_BOARD_SLUG,
+        "columns": KANBAN_BOARD_COLUMNS,
+        "board_created": True,
+        "cards": cards,
+    }
 
 
 def _fetch_page_meta(url: str) -> dict:
@@ -751,7 +913,15 @@ class Handler(SimpleHTTPRequestHandler):
 
         if path == "/api/config":
             automatik = get_config("automatik_an", "true")
-            self._send_json({"automatik_an": automatik == "true"})
+            self._send_json({
+                "automatik_an": automatik == "true",
+                "kanban_board": KANBAN_BOARD_SLUG,
+            })
+            return
+
+        if path == "/api/kanban/board":
+            state = _get_kanban_board_state()
+            self._send_json(state)
             return
 
         if path == "/api/stats":
