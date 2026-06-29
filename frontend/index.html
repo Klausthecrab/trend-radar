@@ -445,6 +445,81 @@
     padding: 2rem;
     color: var(--red);
   }
+
+  /* How it works - Erklärungsbox */
+  .how-it-works {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-top: 1.5rem;
+    overflow: hidden;
+  }
+  .hiw-header {
+    padding: 0.9rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(124,58,237,0.08);
+  }
+  .hiw-body {
+    padding: 1rem 1.25rem;
+  }
+  .hiw-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.3rem 0;
+    font-size: 0.85rem;
+  }
+  .hiw-label {
+    font-weight: 600;
+    color: var(--accent);
+    min-width: 120px;
+  }
+  .hiw-desc {
+    color: var(--text-dim);
+  }
+  .hiw-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0.6rem 0;
+  }
+  .hiw-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .hiw-step {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .hiw-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    font-size: 1rem;
+  }
+  .hiw-sub {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    padding-left: 2.1rem;
+    line-height: 1.5;
+  }
+  .hiw-legend {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .hiw-icon-done { color: var(--green); }
+  .hiw-icon-active { color: var(--cyan); }
+  .hiw-icon-pending { color: var(--text-dim); }
   .kanban-loading {
     text-align: center;
     padding: 3rem;
@@ -1273,6 +1348,49 @@
       <div class="stat-card">
         <div class="value" id="analyzedEntries">—</div>
         <div class="label" id="analyzedLabel">Analysiert</div>
+      </div>
+    </div>
+
+    <!-- Wie funktioniert das? - Erklärungsbox -->
+    <div class="how-it-works">
+      <div class="hiw-header">🤖 Wie funktioniert das?</div>
+      <div class="hiw-body">
+        <div class="hiw-row">
+          <span class="hiw-label">Trend Radar</span>
+          <span class="hiw-desc">Befehlsstand — nur Dashboard + Speicher</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">Hermes Agent</span>
+          <span class="hiw-desc">Arbeiter — via Kanban-Cron (alle 5 Minuten)</span>
+        </div>
+        <div class="hiw-divider"></div>
+        <div class="hiw-flow">
+          <div class="hiw-step">
+            <span class="hiw-icon">📥</span>
+            <span>Eintrag landet in Trend Radar</span>
+          </div>
+          <div class="hiw-sub">
+            🤖 Automatik AN: sofort als Kanban-Karte &nbsp;|&nbsp; 🔘 Automatik AUS: „📤 Ins Kanban"-Button nötig
+          </div>
+          <div class="hiw-step">
+            <span class="hiw-icon">🗂️</span>
+            <span>Hermes Cron pickt Karte auf (alle 5 Min)</span>
+          </div>
+          <div class="hiw-sub">
+            → Web: 📥→🔎→🏷️→✅ (4 Schritte) &nbsp;|&nbsp; → YouTube: 📥→🎤→🔎→🏷️→✅ (5 Schritte)
+          </div>
+          <div class="hiw-step">
+            <span class="hiw-icon">✅</span>
+            <span>Fertig: Entry liegt in Trilium</span>
+          </div>
+        </div>
+        <div class="hiw-divider"></div>
+        <div class="hiw-legend">
+          Status-Icons in den Karten:&nbsp;
+          <span class="hiw-icon-done">✅</span> = erledigt &nbsp;
+          <span class="hiw-icon-active">⏳</span> = läuft &nbsp;
+          <span class="hiw-icon-pending">❌</span> = offen
+        </div>
       </div>
     </div>
   </div>

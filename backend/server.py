@@ -12,7 +12,6 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, get_config, set_config, init_stage_progress, DB_PATH
-from trilium import RESOURCES_NOTE_ID, get_resources_structure, format_structure_for_llm
 
 # Kanban board configuration
 KANBAN_BOARD_SLUG = "trend-radar"
@@ -114,306 +113,7 @@ def _send_to_kanban(entry_id):
         db.close()
 
 
-def _run_youtube_pipeline(entry_id: int):
-    """YouTube Pipeline: step by step with stage_progress updates.
-    Steps: extracting → transcribing → analyzing → path_suggested → filed"""
-    from pipeline import get_youtube_metadata, download_youtube_audio, transcribe_audio
-    from analysis import analyze_with_llm, suggest_trilium_path
-    from trilium import create_trilium_note, get_resources_structure, format_structure_for_llm
 
-    db = get_db()
-    try:
-        row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-        if not row:
-            return
-        entry = dict(row)
-        url = entry["url"]
-        title = entry.get("title", "") or ""
-    finally:
-        db.close()
-
-    print(f"\n{'='*50}")
-    print(f"🎬 YouTube-Pipeline #${entry_id}: {title[:50] or url[:50]}...")
-    set_processing_step(entry_id, "extracting")
-
-    # Step 1: Extract metadata
-    print("  Step 1/6: Metadaten extrahieren...")
-    meta = get_youtube_metadata(url)
-    thumbnail = meta.get("thumbnail_url", "")
-    channel = meta.get("channel", "")
-    video_language = meta.get("language") or "de"
-    if thumbnail or channel:
-        db = get_db()
-        db.execute("UPDATE entries SET thumbnail_url = ?, author = ?, language = ? WHERE id = ?",
-                   (thumbnail, channel, video_language, entry_id))
-        db.commit()
-        db.close()
-    print(f"  ✅ Metadaten: {channel} ({video_language})")
-    set_processing_step(entry_id, "transcribing")
-
-    # Step 2: Download audio
-    print("  Step 2/6: Audio herunterladen...")
-    audio_path = download_youtube_audio(url)
-    if not audio_path:
-        db = get_db()
-        db.execute("UPDATE entries SET status = 'failed' WHERE id = ?", (entry_id,))
-        db.commit()
-        db.close()
-        set_processing_step(entry_id, None)
-        _update_entry_status(entry_id, "failed")
-        print(f"❌ YouTube-Pipeline #${entry_id}: Download fehlgeschlagen")
-        return
-
-    # Step 3: Transcribe
-    print("  Step 3/6: Transkribieren...")
-    transcript = transcribe_audio(audio_path, language=video_language)
-    try:
-        os.unlink(audio_path)
-    except OSError:
-        pass
-
-    if not transcript:
-        set_processing_step(entry_id, None)
-        _update_entry_status(entry_id, "failed")
-        print(f"❌ YouTube-Pipeline #${entry_id}: Transkription fehlgeschlagen")
-        return
-
-    # Save transcript + mark transcribed in stage_progress
-    db = get_db()
-    db.execute("UPDATE entries SET content = ?, status = 'transcribed' WHERE id = ?",
-               (transcript, entry_id))
-    db.commit()
-    db.close()
-    _update_stage_progress(entry_id, "transcribed", True)
-    print(f"  ✅ Transkript: {len(transcript)} Zeichen")
-
-    # Step 4: LLM Analysis
-    print("  Step 4/6: LLM-Analyse...")
-    set_processing_step(entry_id, "analyzing")
-    analysis = analyze_with_llm(title or url, transcript, "youtube", language=video_language)
-    if not analysis:
-        set_processing_step(entry_id, None)
-        _update_entry_status(entry_id, "failed")
-        print(f"❌ YouTube-Pipeline #${entry_id}: Analyse fehlgeschlagen")
-        return
-
-    db = get_db()
-    db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
-               (json.dumps(analysis), entry_id))
-    db.commit()
-    db.close()
-    _update_stage_progress(entry_id, "analyzed", True)
-    _update_entry_status(entry_id, "analyzed")
-    print(f"  ✅ Analyse: Relevanz {analysis.get('relevance', '?')}/5")
-
-    # Step 5: Trilium path suggestion
-    print("  Step 5/6: Trilium-Pfad vorschlagen...")
-    set_processing_step(entry_id, "path_suggesting")
-    try:
-        tree = get_resources_structure()
-        structure_str = format_structure_for_llm(tree)
-        path_suggestion = suggest_trilium_path(title or url, analysis, structure_str, language=video_language)
-        if path_suggestion:
-            db = get_db()
-            db.execute(
-                "UPDATE entries SET trilium_suggested_path = ?, trilium_target_note_id = ?, status = 'path_suggested' WHERE id = ?",
-                (path_suggestion.get("path", ""), path_suggestion.get("noteId", ""), entry_id)
-            )
-            db.commit()
-            db.close()
-            _update_stage_progress(entry_id, "path_found", True)
-            print(f"  ✅ Pfad: {path_suggestion.get('path', '📚 Resources')}")
-    except Exception as e:
-        print(f"  ⚠️ Pfad-Fehler: {e}")
-        db = get_db()
-        db.execute("UPDATE entries SET trilium_target_note_id = ?, status = 'path_suggested' WHERE id = ?",
-                   (RESOURCES_NOTE_ID, entry_id))
-        db.commit()
-        db.close()
-        _update_stage_progress(entry_id, "path_found", True)
-
-    # Step 6: File in Trilium
-    print("  Step 6/6: In Trilium ablegen...")
-    set_processing_step(entry_id, "filing")
-    try:
-        db = get_db()
-        entry_row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-        db.close()
-        if entry_row:
-            entry_full = dict(entry_row)
-            target_note_id = entry_full.get("trilium_target_note_id") or RESOURCES_NOTE_ID
-            result = create_trilium_note(entry_full, analysis, target_note_id)
-            if result["status"] == "ok":
-                db = get_db()
-                db.execute(
-                    "UPDATE entries SET status = 'filed', trilium_note_id = ?, processing_step = NULL WHERE id = ?",
-                    (result.get("note_id", ""), entry_id)
-                )
-                db.commit()
-                db.close()
-                _update_stage_progress(entry_id, "filed", True)
-                print(f"  ✅ Abgelegt: {result.get('path', '📚 Resources')}")
-            else:
-                print(f"  ⚠️ Trilium-Fehler: {result.get('error')}")
-                set_processing_step(entry_id, None)
-    except Exception as e:
-        print(f"  ⚠️ Trilium-Fehler: {e}")
-        set_processing_step(entry_id, None)
-
-    print(f"✅ YouTube-Pipeline #${entry_id} abgeschlossen")
-    print(f"{'='*50}")
-
-
-def _run_web_pipeline(entry_id: int):
-    """Web Pipeline: step by step with stage_progress updates.
-    Steps: analyzing → path_suggested → filed"""
-    from analysis import analyze_with_llm, suggest_trilium_path
-    from trilium import create_trilium_note, get_resources_structure, format_structure_for_llm
-    import re
-    import urllib.request
-
-    db = get_db()
-    try:
-        row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-        if not row:
-            return
-        entry = dict(row)
-        url = entry["url"]
-        title = entry.get("title", "") or ""
-        language = entry.get("language", "de")
-    finally:
-        db.close()
-
-    print(f"\n{'='*50}")
-    print(f"🌐 Web-Pipeline #${entry_id}: {title[:50] or url[:50]}...")
-    set_processing_step(entry_id, "analyzing")
-
-    # Step 1: Fetch page content
-    print("  Step 1/4: Seiteninhalt laden...")
-    content = None
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
-        )
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-        text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.I)
-        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.I)
-        text = re.sub(r'<[^>]+>', ' ', text)
-        content = re.sub(r'\s+', ' ', text).strip()[:4000]
-        print(f"  ✅ Content: {len(content)} Zeichen")
-    except Exception as e:
-        print(f"  ⚠️ Fetch-Fehler: {e}")
-
-    if content:
-        db = get_db()
-        db.execute("UPDATE entries SET content = ? WHERE id = ?", (content, entry_id))
-        db.commit()
-        db.close()
-    else:
-        # Still try analysis on title only
-        print("  ℹ️  Kein Content — Analyse nur anhand Titel")
-
-    # Step 2: LLM Analysis
-    print("  Step 2/4: LLM-Analyse...")
-    analysis = analyze_with_llm(title, content or title, "web", language=language)
-    if not analysis:
-        set_processing_step(entry_id, None)
-        _update_entry_status(entry_id, "failed")
-        print(f"❌ Web-Pipeline #${entry_id}: Analyse fehlgeschlagen")
-        return
-
-    db = get_db()
-    db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
-               (json.dumps(analysis), entry_id))
-    db.commit()
-    db.close()
-    _update_stage_progress(entry_id, "analyzed", True)
-    _update_entry_status(entry_id, "analyzed")
-    print(f"  ✅ Analyse: Relevanz {analysis.get('relevance', '?')}/5")
-
-    # Step 3: Trilium path suggestion
-    print("  Step 3/4: Trilium-Pfad vorschlagen...")
-    set_processing_step(entry_id, "path_suggesting")
-    try:
-        tree = get_resources_structure()
-        structure_str = format_structure_for_llm(tree)
-        path_suggestion = suggest_trilium_path(title or url, analysis, structure_str, language=language)
-        if path_suggestion:
-            db = get_db()
-            db.execute(
-                "UPDATE entries SET trilium_suggested_path = ?, trilium_target_note_id = ?, status = 'path_suggested' WHERE id = ?",
-                (path_suggestion.get("path", ""), path_suggestion.get("noteId", ""), entry_id)
-            )
-            db.commit()
-            db.close()
-            _update_stage_progress(entry_id, "path_found", True)
-            print(f"  ✅ Pfad: {path_suggestion.get('path', '📚 Resources')}")
-    except Exception as e:
-        print(f"  ⚠️ Pfad-Fehler: {e}")
-        db = get_db()
-        db.execute("UPDATE entries SET trilium_target_note_id = ?, status = 'path_suggested' WHERE id = ?",
-                   (RESOURCES_NOTE_ID, entry_id))
-        db.commit()
-        db.close()
-        _update_stage_progress(entry_id, "path_found", True)
-
-    # Step 4: File in Trilium
-    print("  Step 4/4: In Trilium ablegen...")
-    set_processing_step(entry_id, "filing")
-    try:
-        db = get_db()
-        entry_row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-        db.close()
-        if entry_row:
-            entry_full = dict(entry_row)
-            target_note_id = entry_full.get("trilium_target_note_id") or RESOURCES_NOTE_ID
-            result = create_trilium_note(entry_full, analysis, target_note_id)
-            if result["status"] == "ok":
-                db = get_db()
-                db.execute(
-                    "UPDATE entries SET status = 'filed', trilium_note_id = ?, processing_step = NULL WHERE id = ?",
-                    (result.get("note_id", ""), entry_id)
-                )
-                db.commit()
-                db.close()
-                _update_stage_progress(entry_id, "filed", True)
-                print(f"  ✅ Abgelegt: {result.get('path', '📚 Resources')}")
-            else:
-                print(f"  ⚠️ Trilium-Fehler: {result.get('error')}")
-                set_processing_step(entry_id, None)
-    except Exception as e:
-        print(f"  ⚠️ Trilium-Fehler: {e}")
-        set_processing_step(entry_id, None)
-
-    print(f"✅ Web-Pipeline #${entry_id} abgeschlossen")
-    print(f"{'='*50}")
-
-
-def _auto_process_entry(entry_id: int):
-    """Chained auto-processing: preanalyze → kanban → pipeline.
-    Replaces the old parallel threads for new entries."""
-    # Phase 1: Preanalyze (metadata enrichment)
-    print(f"🚀 Auto-Process #{entry_id}: Phase 1 — Preanalyze")
-    _preanalyze_entry(entry_id)
-
-    # Phase 2: Send to Kanban (set status)
-    print(f"🚀 Auto-Process #{entry_id}: Phase 2 — Kanban")
-    _send_to_kanban(entry_id)
-
-    # Phase 3: Run pipeline
-    db = get_db()
-    try:
-        row = db.execute("SELECT source_type FROM entries WHERE id = ?", (entry_id,)).fetchone()
-        source_type = row["source_type"] if row else "web"
-    finally:
-        db.close()
-    print(f"🚀 Auto-Process #{entry_id}: Phase 3 — {source_type}-Pipeline")
-    if source_type == "youtube":
-        _run_youtube_pipeline(entry_id)
-    else:
-        _run_web_pipeline(entry_id)
 
 
 def _update_entry_status(entry_id, new_status):
@@ -691,128 +391,7 @@ def _preanalyze_entry(entry_id: int):
         db.close()
 
 
-def _analyze_and_suggest(entry_id: int, entry: dict):
-    """Background job: run LLM analysis + Trilium path suggestion.
-    
-    For YouTube: full pipeline (download → transcribe → analyze → suggest path)
-    For non-YouTube: fetch page content → analyze → suggest path
-    """
-    from database import get_db
-    from analysis import analyze_with_llm, suggest_trilium_path
-    import re
-    
-    url = entry["url"]
-    source_type = entry["source_type"]
-    title = entry.get("title", "") or ""
-    language = entry.get("language", "de")
-    
-    print(f"🧵 Starte Analyse für Entry #{entry_id}: {url[:60]}...")
-    set_processing_step(entry_id, "analyzing")
-    
-    content = None
-    analysis = None
-    
-    if source_type == "youtube" or "youtube.com" in url or "youtu.be" in url:
-        # YouTube: full pipeline
-        from pipeline import process_youtube
-        result = process_youtube(url, title, entry_id)
-        if result.get("status") == "error":
-            print(f"⚠️  YouTube-Pipeline fehlgeschlagen für #{entry_id}: {result.get('error')}")
-            db = get_db()
-            db.execute("UPDATE entries SET status = 'failed' WHERE id = ?", (entry_id,))
-            db.commit()
-            db.close()
-            set_processing_step(entry_id, None)
-            return
-        
-        content = result.get("transcript", "")
-        analysis = result.get("analysis")
-        thumbnail = result.get("thumbnail_url")
-        channel = result.get("channel")
-        lang = result.get("language", language)
-        
-        # Store in DB
-        db = get_db()
-        db.execute("UPDATE entries SET content = ?, language = ?, thumbnail_url = ?, author = ? WHERE id = ?",
-                    (content, lang, thumbnail, channel, entry_id))
-        db.commit()
-        db.close()
-    else:
-        # Non-YouTube: fetch page and extract text
-        import urllib.request
-        print(f"🌐 Fetching page content: {url[:60]}...")
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"}
-            )
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                html = resp.read().decode("utf-8", errors="replace")
-            
-            # Simple HTML-to-text: strip tags, keep text
-            text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.I)
-            text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.I)
-            text = re.sub(r'<[^>]+>', ' ', text)
-            text = re.sub(r'\s+', ' ', text).strip()
-            content = text[:4000]  # Cap at 4000 chars
-            
-            print(f"   📄 Extrahiert: {len(content)} Zeichen Content")
-            
-            # Store content in DB
-            db = get_db()
-            db.execute("UPDATE entries SET content = ? WHERE id = ?", (content, entry_id))
-            db.commit()
-            db.close()
-        except Exception as e:
-            print(f"⚠️  Page-Fetch Fehler für #{entry_id}: {e}")
-            content = None
-    
-    # Step 2: LLM Analysis
-    if content and not analysis:
-        analysis = analyze_with_llm(title, content, source_type, language=language)
-    
-    if analysis:
-        # Store analysis in DB
-        db = get_db()
-        db.execute("UPDATE entries SET analysis = ? WHERE id = ?",
-                   (json.dumps(analysis), entry_id))
-        db.commit()
-        db.close()
-        print(f"✅ Analyse abgeschlossen für #{entry_id}: Relevanz {analysis.get('relevance', '?')}/5")
-    else:
-        print(f"⚠️  Keine Analyse für #{entry_id} — kein Content verfügbar")
-        db = get_db()
-        db.execute("UPDATE entries SET status = 'failed' WHERE id = ?", (entry_id,))
-        db.commit()
-        db.close()
-        set_processing_step(entry_id, None)
-        return
-    
-    # Step 3: Trilium path suggestion
-    print(f"🗺️  Ermittle Trilium-Pfad für #{entry_id}...")
-    try:
-        tree = get_resources_structure()
-        structure_str = format_structure_for_llm(tree)
-        path_suggestion = suggest_trilium_path(title, analysis, structure_str, language=language)
-        
-        if path_suggestion:
-            db = get_db()
-            db.execute(
-                "UPDATE entries SET trilium_suggested_path = ?, trilium_target_note_id = ? WHERE id = ?",
-                (path_suggestion.get("path", ""), path_suggestion.get("noteId", ""), entry_id)
-            )
-            db.commit()
-            db.close()
-            print(f"✅ Trilium-Pfad: {path_suggestion.get('path', '📚 Resources')}")
-    except Exception as e:
-        print(f"⚠️  Trilium-Pfad-Fehler für #{entry_id}: {e}")
-    
-    # Set status to analyzed
-    db = get_db()
-    db.execute("UPDATE entries SET status = 'analyzed', processing_step = NULL WHERE id = ?", (entry_id,))
-    db.commit()
-    db.close()
-    print(f"✅ Entry #{entry_id} ist bereit für Trilium-Ablage")
+
 
 
 # ─── Telegram Bot Poller ─────────────────────────────
@@ -1181,16 +760,17 @@ class Handler(SimpleHTTPRequestHandler):
                 if entry_row:
                     entry_id = entry_row["id"]
 
-                    # Chained auto-processing: preanalyze → kanban → pipeline
-                    # Replaces old parallel _preanalyze_entry + _auto_kanban threads
+                    # Automatik AN: Preanalyse + Kanban-Karte erzeugen (Cron macht den Rest)
                     automatik = get_config("automatik_an", "true")
                     if automatik == "true":
                         threading.Thread(
-                            target=_auto_process_entry,
+                            target=_preanalyze_entry,
                             args=(entry_id,),
                             daemon=True
                         ).start()
-                        print(f"🤖 Automatik: Auto-Process #{entry_id} gestartet")
+                        # Kanban-Karte erzeugen (setzt Status + ruft hermes kanban create auf)
+                        _send_to_kanban(entry_id)
+                        print(f"🤖 Automatik: Pre-Analyse + Kanban für #{entry_id} gestartet")
                     else:
                         # Automatik AUS: nur Pre-Analyse (Metadaten)
                         threading.Thread(
@@ -1224,91 +804,18 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 _send_to_kanban(entry_id)
 
-                # Pipeline in Background starten (YouTube → transcribe+analyze, Web → analyze)
-                source_type = entry.get("source_type", "web")
-                if source_type == "youtube":
-                    threading.Thread(target=_run_youtube_pipeline, args=(int(entry_id),), daemon=True).start()
-                else:
-                    threading.Thread(target=_run_web_pipeline, args=(int(entry_id),), daemon=True).start()
-
-                self._send_json({"message": f"Entry #{entry_id} ins Kanban geschickt, Pipeline gestartet", "status": "kanban"})
+                self._send_json({"message": f"Entry #{entry_id} ins Kanban geschickt (Cron verarbeitet)", "status": "kanban"})
                 return
 
-        # POST /api/entries/:id/analyze — LLM-Analyse starten (nur pre_analyzed)
+        # POST /api/entries/:id/analyze — Entfernt (Analyse macht jetzt der Kanban-Cron)
         if path.startswith("/api/entries/") and path.endswith("/analyze"):
-            parts = path.split("/")
-            if len(parts) == 5:
-                entry_id = parts[3]
-                db = get_db()
-                row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-                db.close()
-                if not row:
-                    self._send_json({"error": "Entry not found"}, 404)
-                    return
-                entry = dict(row)
-                if entry["status"] not in ("pre_analyzed", "new"):
-                    self._send_json({"error": f"Analyse nur für pre_analyzed/new möglich, aktuell: {entry['status']}"}, 400)
-                    return
+            self._send_json({"error": "Analyse wird jetzt vom Kanban-Cron erledigt. Entry via 'Ins Kanban'-Button schicken.", "status": "deprecated"}, 410)
+            return
 
-                def _run_analysis(entry_id: int, entry: dict):
-                    _analyze_and_suggest(entry_id, entry)
-
-                threading.Thread(target=_run_analysis, args=(entry_id, entry), daemon=True).start()
-                self._send_json({"message": "Analyse gestartet"})
-                return
-
-        # POST /api/entries/:id/trilium — In Trilium ablegen
+        # POST /api/entries/:id/trilium — Entfernt (Ablage macht jetzt der Kanban-Cron)
         if path.startswith("/api/entries/") and path.endswith("/trilium"):
-            parts = path.split("/")
-            if len(parts) == 5:
-                entry_id = parts[3]
-                db = get_db()
-                row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
-                db.close()
-                if not row:
-                    self._send_json({"error": "Entry not found"}, 404)
-                    return
-                entry = dict(row)
-                if entry["status"] != "analyzed":
-                    self._send_json({"error": f"Ablage nur für analyzed möglich, aktuell: {entry['status']}"}, 400)
-                    return
-
-                target_note_id = entry.get("trilium_target_note_id") or RESOURCES_NOTE_ID
-                analysis = entry.get("analysis")
-                if analysis:
-                    try:
-                        analysis = json.loads(analysis)
-                    except (json.JSONDecodeError, TypeError):
-                        analysis = {}
-
-                from trilium import create_trilium_note
-                result = create_trilium_note(entry, analysis, target_note_id)
-
-                if result["status"] == "ok":
-                    db = get_db()
-                    db.execute(
-                        "UPDATE entries SET status = 'filed', trilium_note_id = ?, processing_step = NULL WHERE id = ?",
-                        (result.get("note_id", ""), entry_id)
-                    )
-                    db.commit()
-                    db.close()
-                    self._send_json({
-                        "status": "filed",
-                        "note_id": result["note_id"],
-                        "path": result["path"],
-                        "message": f"📂 Abgelegt unter: {result['path']}"
-                    })
-                else:
-                    db = get_db()
-                    db.execute("UPDATE entries SET status = 'failed' WHERE id = ?", (entry_id,))
-                    db.commit()
-                    db.close()
-                    self._send_json({
-                        "status": "failed",
-                        "error": result.get("error", "Unbekannter Fehler"),
-                        "message": f"❌ Fehler bei Trilium-Ablage: {result.get('error', 'Unbekannt')}"
-                    }, 500)
-                return
+            self._send_json({"error": "Trilium-Ablage wird jetzt vom Kanban-Cron erledigt. Entry muss erst analysiert werden.", "status": "deprecated"}, 410)
+            return
 
         # --- Playlist API (POST) ---
 
