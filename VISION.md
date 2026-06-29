@@ -213,6 +213,41 @@ Alle münden in `POST /api/entries` → landen in der Einträge-Tabelle. Kein Un
 2. ⬜ **Automatik-Schalter im UI** — Toggle + Config-Endpoint (#34)
 3. ⬜ **Manuell-Button pro Eintrag** — "📤 Ins Kanban" (#35)
 4. ⬜ **Phasen-Fortschritt im UI** — Balken + Icons pro Karte (#36)
-5. ⬜ **YouTube-Route** — source_type=youtube → eigener Stufen-Pfad (#37)
-6. ⬜ **Hermes Skill: Trend-Radar-Analyse** — Der Kanban-Skill (#38)
-7. ⬜ **Alte Analyse-Threads entfernen** — pre_analyze + analyze aus server.py raus
+|5. ✅ **YouTube-Route** — source_type=youtube → eigener Stufen-Pfad (#37)
+6. ✅ **Hermes Skill: Trend-Radar-Analyse** — Der Kanban-Skill (#38)
+7. ✅ **Alte Analyse-Threads entfernen** — pre_analyze + analyze aus server.py raus (#47)
+8. ✅ **Kanban-Worker-Cron** — Hermes Agent Cron-Job alle 5 Min (#43)
+
+---
+
+## Kanban-Worker-Cron (Issue #43)
+
+Ein Hermes-Cron-Job pollt alle 5 Minuten das `trend-radar`-Kanban-Board und verarbeitet `ready`-Karten.
+
+### Konfiguration
+
+| Feld | Wert |
+|------|------|
+| **Job-ID** | `f6c6076d40b2` |
+| **Name** | `trend-radar-kanban-worker` |
+| **Schedule** | Alle 5 Minuten (`every 5m`) |
+| **Skills** | `trend-radar-analysis`, `butler-homelab-profile`, `knowledgeskill-secrets-v1` |
+| **Model** | `deepseek-v4-flash` (Provider: `custom`) |
+| **Deliver** | `local` (keine Benachrichtigung, nur Log) |
+| **Toolsets** | `terminal`, `web`, `file` |
+
+### Worker-Workflow (pro Tick)
+
+1. **Pre-Flight:** Server erreichbar? Automatik AN?
+2. **Board poller:** `hermes kanban --board trend-radar list --status ready --json` → erste ready-Karte
+3. **Entry-ID + Schritt extrahieren** aus Kartentitel (Regex: `Eintrag #(\d+)` + `Schritt: (\w+)`)
+4. **Schritt ausführen** laut `trend-radar-analysis`-Skill:
+   - `extract` (Web): HTML→Text
+   - `extract` (YouTube): yt-dlp Metadaten
+   - `transcribe`: yt-dlp + Venice STT
+   - `analyze`: LLM-Analyse
+   - `suggest_path`: Trilium-Struktur + LLM-Pfad-Vorschlag
+   - `file`: Trilium-Note via ETAPI
+5. **PATCH /api/entries/:id** → Ergebnis + stage_progress
+6. **Karte abschließen** + nächste Schritt-Karte anlegen
+7. **Bei Fehler:** Status `failed`, Karte in `review`
