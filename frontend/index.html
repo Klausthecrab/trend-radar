@@ -639,6 +639,23 @@
     margin-bottom: 0.75rem;
   }
 
+  /* Drag&Drop Styles */
+  .kanban-col.drag-over {
+    border-color: var(--accent);
+    background: rgba(124,58,237,0.08);
+    box-shadow: inset 0 0 20px rgba(124,58,237,0.1);
+  }
+  .kanban-card.dragging {
+    opacity: 0.4;
+    transform: rotate(2deg);
+  }
+  .kanban-card[draggable="true"] {
+    cursor: grab;
+  }
+  .kanban-card[draggable="true"]:active {
+    cursor: grabbing;
+  }
+
   .stage-percent {
     font-size: 0.72rem;
     color: var(--text-dim);
@@ -1890,6 +1907,41 @@
     <div class="kanban-board" id="kanbanBoard">
       <div class="kanban-loading">📋 Lade Kanban-Board …</div>
     </div>
+
+    <!-- How it works — Kanban-Erklärung -->
+    <div class="how-it-works">
+      <div class="hiw-header">🤖 So funktioniert der Kanban</div>
+      <div class="hiw-body">
+        <div class="hiw-row">
+          <span class="hiw-label">📥 Backlog</span>
+          <span class="hiw-desc">Neue Einträge landen hier. Warten auf Start.</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">🔎 Ready</span>
+          <span class="hiw-desc">Bereit zur Verarbeitung durch Hermes Worker.</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">⚡ Running</span>
+          <span class="hiw-desc">Wird aktuell vom Worker bearbeitet.</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">👀 Review</span>
+          <span class="hiw-desc">Fehler oder manuelle Prüfung nötig.</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">✅ Done</span>
+          <span class="hiw-desc">Erfolgreich abgeschlossen und abgelegt.</span>
+        </div>
+        <div class="hiw-divider"></div>
+        <div class="hiw-row">
+          <span class="hiw-label">↕️ Drag&Drop</span>
+          <span class="hiw-desc">Karten per Drag&Drop zwischen Spalten verschieben. Backlog → Ready triggert den Worker.</span>
+        </div>
+        <div class="hiw-legend" style="font-size:0.8rem;margin-top:0.3rem;">
+          ⏱ Timer-Farben: &lt; 10 Min = normal &nbsp;|&nbsp; ⚠️ Orange = &gt; 10 Min &nbsp;|&nbsp; ⛔ Rot = &gt; 15 Min
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Dump Panel -->
@@ -2345,7 +2397,12 @@ function renderKanbanCard(card) {
   // Detect YouTube from stage_progress: if it has a 'transcribed' key, it's YouTube
   const isYt = card.stage_progress && card.stage_progress.hasOwnProperty('transcribed');
   const spHtml = renderStageProgress(card.stage_progress, isYt ? 'youtube' : 'web', null);
-  return `<div class="kanban-card ${bc}" onclick="openDetail(${card.entry_id})" title="Seit ${formatDuration(card.seconds_in_column)} in ${card.column}">
+  return `<div class="kanban-card ${bc}" draggable="true"
+       data-card-id="${card.id}" data-entry-id="${card.entry_id}"
+       data-column="${card.column}"
+       ondragstart="onDragStart(event)"
+       onclick="openDetail(${card.entry_id})"
+       title="Seit ${formatDuration(card.seconds_in_column)} in ${card.column}">
     <div class="kanban-card-id">#${card.entry_id}</div>
     <div class="kanban-card-title">${escapeHtml(card.title || '—')}</div>
     ${card.stage_progress ? '<div class="kanban-card-stage">' + spHtml + '</div>' : ''}
@@ -2395,17 +2452,39 @@ async function loadKanbanBoard() {
       byCol[col].push(c);
     });
 
+    // Done card 24h auto-hide: filter out done cards older than 24h
+    const now = Date.now() / 1000;
+    const hiddenDoneCount = byCol['done'] ? byCol['done'].filter(c => {
+      const age = now - (c.updated_at ? new Date(c.updated_at).getTime() / 1000 : 0);
+      if (age > 86400) return true; // older than 24h — mark for hiding
+      // Also check by seconds_in_column as fallback
+      if (c.seconds_in_column > 86400) return true;
+      return false;
+    }).length : 0;
+    if (hiddenDoneCount > 0) {
+      byCol['done'] = byCol['done'].filter(c => {
+        const age = now - (c.updated_at ? new Date(c.updated_at).getTime() / 1000 : 0);
+        if (age > 86400) return false;
+        if (c.seconds_in_column > 86400) return false;
+        return true;
+      });
+    }
+
     // Limit: max 12 cards per column (oldest first), plus overflow counter
     const maxCards = 12;
     let totalCards = 0;
     let html = '';
+    const colHasDrop = { 'todo': true, 'ready': true, 'review': true, 'done': true };
     cols.forEach(col => {
       const colData = KANBAN_COLUMN_MAP[col] || { icon: '📌', label: col };
       const colCards = byCol[col] || [];
       const visible = colCards.slice(-maxCards);
       totalCards += colCards.length;
 
-      html += '<div class="kanban-col">';
+      const dropAttrs = colHasDrop[col]
+        ? `ondragover="onDragOver(event)" ondrop="onDrop(event)" data-column="${col}"`
+        : '';
+      html += `<div class="kanban-col" ${dropAttrs}>`;
       html += '<div class="kanban-col-header">';
       html += '<span class="kanban-col-title">' + colData.icon + ' ' + colData.label + '</span>';
       html += '<span class="kanban-col-count">' + colCards.length + '</span>';
@@ -2419,16 +2498,145 @@ async function loadKanbanBoard() {
           html += '<div style="text-align:center;font-size:0.7rem;color:var(--text-dim);padding:0.25rem;">⋯ +' + (colCards.length - maxCards) + ' weitere</div>';
         }
       }
-      html += '</div></div>';
+      html += '</div>';
+      // Done column: show hidden count info
+      if (col === 'done' && hiddenDoneCount > 0) {
+        html += `<div style="text-align:center;font-size:0.7rem;color:var(--text-dim);padding:0.25rem 0.5rem;border-top:1px solid var(--border);margin-top:0.25rem;">
+          🕐 ${hiddenDoneCount} älter als 24h ausgeblendet</div>`;
+      }
+      html += '</div>';
     });
 
     container.innerHTML = html;
     info.textContent = totalCards + ' Karte' + (totalCards !== 1 ? 'n' : '') + ' im Board · ' + data.board;
     btn.disabled = false;
+
+    // Load done card details (Trilium link + summary) after render
+    setTimeout(loadDoneEntryDetails, 300);
   } catch (err) {
     container.innerHTML = '<div class="kanban-error">⚠️ Board nicht erreichbar<br><span style="font-size:0.8rem;color:var(--text-dim);">' + escapeHtml(err.message) + '</span>';
     info.textContent = 'Fehler';
     btn.disabled = false;
+  }
+}
+
+// ─── Kanban Drag & Drop ─────────────────────────────
+function onDragStart(event) {
+  const card = event.target.closest('.kanban-card');
+  if (!card) return;
+  event.dataTransfer.setData('text/plain', JSON.stringify({
+    cardId: card.dataset.cardId,
+    entryId: card.dataset.entryId,
+    fromColumn: card.dataset.column,
+  }));
+  event.dataTransfer.effectAllowed = 'move';
+  card.classList.add('dragging');
+}
+
+function onDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  const col = event.target.closest('.kanban-col');
+  if (col) col.classList.add('drag-over');
+}
+
+// Remove drag-over highlight on drag end
+document.addEventListener('dragend', function() {
+  document.querySelectorAll('.kanban-col.drag-over').forEach(c => c.classList.remove('drag-over'));
+  document.querySelectorAll('.kanban-card.dragging').forEach(c => c.classList.remove('dragging'));
+});
+
+// Remove drag-over on dragleave
+document.addEventListener('dragover', function(event) {
+  document.querySelectorAll('.kanban-col.drag-over').forEach(c => {
+    if (!c.contains(event.target)) c.classList.remove('drag-over');
+  });
+});
+
+async function onDrop(event) {
+  event.preventDefault();
+  const col = event.target.closest('.kanban-col');
+  if (!col) return;
+  col.classList.remove('drag-over');
+
+  const dataStr = event.dataTransfer.getData('text/plain');
+  if (!dataStr) return;
+  const data = JSON.parse(dataStr);
+  const targetColumn = col.dataset.column;
+
+  if (data.fromColumn === targetColumn) return; // same column, no-op
+
+  // Don't allow moving TO running (worker owned)
+  if (targetColumn === 'running') return;
+
+  const btn = document.getElementById('kanbanRefreshBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Verschiebe …';
+
+  try {
+    const res = await fetch(API + '/api/kanban/board/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ card_id: parseInt(data.cardId), to_column: targetColumn }),
+    });
+    if (res.ok) {
+      // Refresh board
+      setTimeout(() => loadKanbanBoard(), 500);
+    } else {
+      const errData = await res.json();
+      alert('❌ Verschieben fehlgeschlagen: ' + (errData.error || 'Unbekannter Fehler'));
+    }
+  } catch (err) {
+    alert('❌ Netzwerkfehler: ' + err.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '⟳ Aktualisieren';
+}
+
+// ─── Kanban Done Card Enhancement ────────────────────
+// Load entry details for done cards to show Trilium link + summary
+async function loadDoneEntryDetails() {
+  try {
+    const res = await fetch(API + '/api/entries?limit=100&status=filed');
+    const entries = await res.json();
+    const byId = {};
+    entries.forEach(e => byId[e.id] = e);
+
+    // Find done cards and inject extra info
+    document.querySelectorAll('.kanban-col').forEach(col => {
+      const colHeader = col.querySelector('.kanban-col-title');
+      if (!colHeader || !colHeader.textContent.includes('✅')) return;
+      col.querySelectorAll('.kanban-card').forEach(card => {
+        const entryId = parseInt(card.dataset.entryId);
+        if (!entryId) return;
+        const entry = byId[entryId];
+        if (!entry) return;
+
+        // Add Trilium link if available
+        if (entry.trilium_note_id) {
+          const link = document.createElement('a');
+          link.href = 'http://localhost:18080/#root/' + entry.trilium_note_id;
+          link.target = '_blank';
+          link.textContent = '📂 In Trilium';
+          link.style.cssText = 'display:block;font-size:0.7rem;color:var(--cyan);margin-top:0.2rem;text-decoration:none;';
+          link.onclick = function(e) { e.stopPropagation(); };
+          const durationEl = card.querySelector('.kanban-card-duration');
+          if (durationEl) durationEl.after(link);
+        }
+
+        // Add brief done summary
+        const summary = entry.analysis && entry.analysis.summary;
+        if (summary) {
+          const el = document.createElement('div');
+          el.textContent = summary.slice(0, 80) + (summary.length > 80 ? '…' : '');
+          el.style.cssText = 'font-size:0.7rem;color:var(--text-dim);margin-top:0.2rem;line-height:1.3;';
+          const durationEl = card.querySelector('.kanban-card-duration');
+          if (durationEl) durationEl.after(el);
+        }
+      });
+    });
+  } catch (err) {
+    // Silently fail — enhancement is optional
   }
 }
 

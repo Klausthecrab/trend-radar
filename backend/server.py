@@ -116,6 +116,54 @@ def _send_to_kanban(entry_id):
 
 
 
+def _move_kanban_card(card_id: int, to_column: str) -> dict:
+    """Move a kanban card to a new column via Hermes CLI.
+    
+    Maps Trend-Radar column names to Hermes kanban CLI commands:
+    - todo (Backlog) → schedule
+    - ready → promote
+    - review → block
+    - done → complete
+    """
+    column_to_cmd = {
+        "todo": "schedule",
+        "ready": "promote",
+        "review": "block",
+        "done": "complete",
+    }
+    cmd_name = column_to_cmd.get(to_column)
+    if not cmd_name:
+        return {"ok": False, "error": f"Unbekannte Zielspalte: {to_column}"}
+    
+    # Don't allow moving TO running (worker-owned)
+    if to_column == "running":
+        return {"ok": False, "error": "Kann Karten nicht manuell in 'Running' verschieben"}
+    
+    try:
+        if cmd_name == "complete":
+            # complete doesn't need a reason
+            cli_cmd = ["hermes", "kanban", "--board", KANBAN_BOARD_SLUG,
+                       cmd_name, str(card_id), "--json"]
+        elif cmd_name == "promote":
+            cli_cmd = ["hermes", "kanban", "--board", KANBAN_BOARD_SLUG,
+                       cmd_name, str(card_id), "Manuell via Drag&Drop", "--json"]
+        else:
+            cli_cmd = ["hermes", "kanban", "--board", KANBAN_BOARD_SLUG,
+                       cmd_name, str(card_id), "Manuell via Drag&Drop"]
+        
+        result = subprocess.run(cli_cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            print(f"   🗂️ Kanban-Karte #{card_id} nach '{to_column}' verschoben")
+            return {"ok": True}
+        else:
+            error_msg = result.stderr.strip()[:200] or "Unbekannter Fehler"
+            print(f"⚠️  Kanban-Move Fehler #{card_id}: {error_msg}")
+            return {"ok": False, "error": error_msg}
+    except Exception as e:
+        print(f"⚠️  Kanban-Move Exception #{card_id}: {e}")
+        return {"ok": False, "error": str(e)}
+
+
 def _update_entry_status(entry_id, new_status):
     """Update only the status field for an entry."""
     db = get_db()
@@ -781,6 +829,21 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        # POST /api/kanban/board/move — Drag&Drop Karte verschieben
+        if path == "/api/kanban/board/move":
+            body = self._read_body()
+            card_id = body.get("card_id")
+            to_column = body.get("to_column", "").strip()
+            if not card_id or not to_column:
+                self._send_json({"error": "card_id and to_column are required"}, 400)
+                return
+            result = _move_kanban_card(card_id, to_column)
+            if result.get("ok"):
+                self._send_json({"message": f"Karte #{card_id} nach '{to_column}' verschoben"})
+            else:
+                self._send_json({"error": result.get("error", "Move fehlgeschlagen")}, 500)
+            return
 
         if path == "/api/entries":
             body = self._read_body()
