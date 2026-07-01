@@ -1351,6 +1351,37 @@
       </div>
     </div>
 
+    <!-- Kanban-Worker Status -->
+    <div class="how-it-works" id="workerStatusBlock">
+      <div class="hiw-header">🤖 Kanban-Worker</div>
+      <div class="hiw-body">
+        <div class="hiw-row">
+          <span class="hiw-label">Status</span>
+          <span class="hiw-desc" id="workerStatusDesc">🟡 Lade …</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">Letzter Run</span>
+          <span class="hiw-desc" id="workerLastRun">—</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">Letztes Ergebnis</span>
+          <span class="hiw-desc" id="workerLastResult">—</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">In Warteschlange</span>
+          <span class="hiw-desc" id="workerCardsInQueue">0 Karten</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">Automatik</span>
+          <span class="hiw-desc" id="workerAutomatik">—</span>
+        </div>
+        <div class="hiw-divider"></div>
+        <div class="hiw-legend" style="font-size:0.8rem;">
+          🟢 Aktiv (Heartbeat &lt; 10 Min) &nbsp;|&nbsp; 🟡 Verzögert (10-30 Min) &nbsp;|&nbsp; 🔴 Tot (&gt; 30 Min)
+        </div>
+      </div>
+    </div>
+
     <!-- Wie funktioniert das? - Erklärungsbox -->
     <div class="how-it-works">
       <div class="hiw-header">🤖 Wie funktioniert das?</div>
@@ -1597,6 +1628,24 @@ async function loadStatus() {
     document.getElementById('unreadEntries').textContent = stats.unread ?? '—';
     document.getElementById('analyzedEntries').textContent = stats.analyzed ?? '—';
     document.getElementById('analyzedLabel').textContent = 'Analysiert';
+  } catch {}
+  // Worker-Status laden
+  try {
+    const wres = await fetch(API + '/api/worker/status');
+    const w = await wres.json();
+    const statusMap = {
+      'active': '🟢 Aktiv',
+      'delayed': '🟡 Verzögert',
+      'dead': '🔴 Tot',
+      'unknown': '⚫ Unbekannt',
+    };
+    document.getElementById('workerStatusDesc').textContent = statusMap[w.worker_status] || '⚫ Unbekannt';
+    document.getElementById('workerLastRun').textContent = w.last_heartbeat_at
+      ? new Date(w.last_heartbeat_at).toLocaleString('de-DE')
+      : '— (noch kein Heartbeat)';
+    document.getElementById('workerLastResult').textContent = w.last_result === 'ok' ? '✅ Erfolgreich' : (w.last_result === 'error' ? '❌ Fehler' : '—');
+    document.getElementById('workerCardsInQueue').textContent = w.cards_in_queue + ' Karte' + (w.cards_in_queue !== 1 ? 'n' : '');
+    document.getElementById('workerAutomatik').textContent = w.automatik_an ? '🤖 AN' : '🔘 AUS';
   } catch {}
 }
 

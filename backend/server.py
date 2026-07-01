@@ -562,6 +562,40 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json({"total": total, "unread": unread, "analyzed": analyzed, "filed": filed, "failed": failed})
             return
 
+        if path == "/api/worker/status":
+            automatik = get_config("automatik_an", "true")
+            heartbeat = get_config("worker_last_heartbeat", None)
+            last_result = get_config("worker_last_result", None)
+            cards_in_queue = get_config("worker_cards_in_queue", "0")
+
+            status = "unknown"
+            if heartbeat:
+                try:
+                    import datetime
+                    hb_time = datetime.datetime.fromisoformat(heartbeat)
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    if hb_time.tzinfo is None:
+                        hb_time = hb_time.replace(tzinfo=datetime.timezone.utc)
+                    diff_min = (now - hb_time).total_seconds() / 60
+                    if diff_min < 10:
+                        status = "active"
+                    elif diff_min < 30:
+                        status = "delayed"
+                    else:
+                        status = "dead"
+                except Exception:
+                    status = "unknown"
+
+            self._send_json({
+                "worker_active": status == "active",
+                "worker_status": status,
+                "last_heartbeat_at": heartbeat,
+                "last_result": last_result,
+                "cards_in_queue": int(cards_in_queue) if cards_in_queue else 0,
+                "automatik_an": automatik == "true",
+            })
+            return
+
         # /api/entries/:id (must come before /api/entries exact match due to routing order)
         if path.startswith("/api/entries/"):
             parts = path.split("/")
@@ -818,6 +852,17 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         # --- Playlist API (POST) ---
+
+        # POST /api/worker/heartbeat — Kanban-Worker sendet Lebenszeichen
+        if path == "/api/worker/heartbeat":
+            body = self._read_body()
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
+            set_config("worker_last_heartbeat", now)
+            set_config("worker_last_result", body.get("result", "ok"))
+            set_config("worker_cards_in_queue", str(body.get("cards_in_queue", 0)))
+            self._send_json({"message": "Heartbeat empfangen", "at": now})
+            return
 
         # POST /api/playlists — Neue Playlist anlegen
         if path == "/api/playlists":
