@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Trend Radar",
+  "version": "1.0",
+  "description": "Sende offene Tabs an Trend Radar — Tabs schließen, URLs sammeln, analysieren lassen.",
+  "permissions": ["tabs"],
+  "host_permissions": ["http://localhost:9126/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "📡 An Trend Radar senden"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}

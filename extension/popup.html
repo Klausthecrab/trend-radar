@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trend Radar</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-icon">📡</div>
+      <div class="header-text">
+        <div class="header-title">Trend Radar</div>
+        <div class="header-sub">Sende Tabs an Butler zur Analyse</div>
+      </div>
+    </div>
+
+    <!-- Tab Counter -->
+    <div class="tab-counter" id="tabCounter">
+      <span id="tabCountLabel">0 Tabs offen</span>
+      <span class="tab-counter-hint" id="tabCounterHint">in diesem Fenster</span>
+    </div>
+
+    <!-- Tab List -->
+    <div class="tab-list" id="tabList">
+      <div class="tab-list-empty">Lade Tabs …</div>
+    </div>
+
+    <!-- Action -->
+    <div class="action-bar">
+      <button class="send-btn" id="sendBtn" disabled>
+        📡 Alle schließen &amp; senden
+      </button>
+      <div class="action-status" id="actionStatus"></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      Trend Radar · localhost:9126
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
