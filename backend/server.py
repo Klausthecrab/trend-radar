@@ -877,7 +877,7 @@ class Handler(SimpleHTTPRequestHandler):
                 import datetime
                 now = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 db.execute(
-                    "UPDATE entries SET status = 'analyzed', trilium_suggested_path = NULL, trilium_target_note_id = NULL WHERE id = ?",
+                    "UPDATE entries SET status = 'path_suggested', trilium_suggested_path = NULL, trilium_target_note_id = NULL WHERE id = ?",
                     (entry_id,)
                 )
                 db.commit()
@@ -888,7 +888,7 @@ class Handler(SimpleHTTPRequestHandler):
                 db.execute("UPDATE entries SET activity_log = ? WHERE id = ?", (json.dumps(log), entry_id))
                 db.commit()
                 db.close()
-                self._send_json({"message": "Vorschlag abgelehnt", "status": "analyzed"})
+                self._send_json({"message": "Vorschlag abgelehnt", "status": "path_suggested"})
                 return
 
         # POST /api/entries/:id/trilium — In Trilium ablegen (Propose → Confirm → File)
@@ -914,7 +914,25 @@ class Handler(SimpleHTTPRequestHandler):
                 if not analysis:
                     analysis = {}
 
-                target_note_id = entry.get("trilium_target_note_id")
+                # Allow edited path from frontend (Issue #51: Human-in-the-Loop)
+                body = {}
+                content_length = int(self.headers.get("Content-Length", 0))
+                if content_length:
+                    try:
+                        body = json.loads(self.rfile.read(content_length).decode())
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                # If frontend sent an edited path, update the DB entry
+                if body.get("trilium_suggested_path"):
+                    db.execute(
+                        "UPDATE entries SET trilium_suggested_path = ? WHERE id = ?",
+                        (body["trilium_suggested_path"], entry_id)
+                    )
+                    db.commit()
+                    entry["trilium_suggested_path"] = body["trilium_suggested_path"]
+
+                target_note_id = body.get("trilium_target_note_id") or entry.get("trilium_target_note_id")
                 if not target_note_id:
                     db.close()
                     self._send_json({"error": "Kein Trilium-Zielpfad vorhanden. Entry muss erst analysiert werden."}, 400)

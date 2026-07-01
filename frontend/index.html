@@ -1594,6 +1594,70 @@
   .detail-action-btn.danger { background: linear-gradient(135deg, var(--red), #dc2626); }
   .detail-action-btn.gray { background: rgba(255,255,255,0.1); color: var(--text-dim); border: 1px solid var(--border); }
 
+  /* ===== Trilium Suggestion Box ===== */
+  .suggestion-box {
+    background: rgba(124,58,237,0.08);
+    border: 1px solid rgba(124,58,237,0.25);
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1rem 0;
+  }
+  .suggestion-box .sb-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+  .suggestion-box .sb-path {
+    font-size: 0.85rem;
+    color: var(--text);
+    padding: 0.4rem 0.6rem;
+    background: rgba(0,0,0,0.2);
+    border-radius: 6px;
+    margin-bottom: 0.3rem;
+    font-family: monospace;
+  }
+  .suggestion-box .sb-hint {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 0.3rem;
+  }
+  .suggestion-box input.sb-edit {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 0.85rem;
+    font-family: monospace;
+    outline: none;
+    margin-bottom: 0.5rem;
+  }
+  .suggestion-box input.sb-edit:focus {
+    box-shadow: 0 0 8px rgba(124,58,237,0.25);
+  }
+  .suggestion-box .sb-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .sb-btn {
+    padding: 0.4rem 0.75rem;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    color: #fff;
+  }
+  .sb-btn:hover { opacity: 0.9; }
+  .sb-btn.sb-green { background: var(--green); }
+  .sb-btn.sb-red { background: var(--red); }
+  .sb-btn.sb-gray { background: rgba(255,255,255,0.1); color: var(--text-dim); border: 1px solid var(--border); }
+  .sb-btn.sb-edit { background: var(--accent); }
+
   @media (max-width: 768px) {
     .telegram-row {
       grid-template-columns: 24px 1fr;
@@ -2716,6 +2780,31 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
     bodyHtml += '</div></div>';
   }
 
+  // ─── Trilium Path Suggestion Box (Issue #51) ─────────
+  if (entry.status === 'path_suggested') {
+    const suggestedPath = entry.trilium_suggested_path;
+    if (suggestedPath) {
+      // Normal: path exists — show suggestion
+      bodyHtml += `<div class="suggestion-box" id="suggestionBox${entry.id}">
+        <div class="sb-title">🏷️ Trilium-Pfad-Vorschlag</div>
+        <div id="suggestionDisplay${entry.id}">
+          <div class="sb-path">${escapeHtml(suggestedPath)}</div>
+          <div class="sb-hint">Hermi hat diesen Pfad in Trilium vorgeschlagen. Du kannst ihn freigeben, ablehnen oder bearbeiten.</div>
+        </div>
+        <div id="suggestionEdit${entry.id}" style="display:none;">
+          <input class="sb-edit" id="suggestionInput${entry.id}" value="${escapeHtml(suggestedPath)}" placeholder="📚 Resources > ...">
+          <div class="sb-hint">Gib den vollständigen Pfad ein (z.B. "📚 Resources > Software & digitales > Homelab")</div>
+        </div>
+      </div>`;
+    } else {
+      // Rejected: no path — show "abgelehnt" message
+      bodyHtml += `<div class="suggestion-box" style="border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.06);">
+        <div class="sb-title" style="color:var(--text-dim);">✖ Vorschlag abgelehnt</div>
+        <div class="sb-hint">Der Trilium-Pfad-Vorschlag wurde verworfen. Warte auf einen neuen Vorschlag vom Kanban-Worker.</div>
+      </div>`;
+    }
+  }
+
   // Full content / transcript
   if (entry.content) {
     bodyHtml += `<div class="modal-section">
@@ -2793,14 +2882,26 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
     footerHtml += `<button onclick="sendToKanbanModal(${entry.id})" class="detail-action-btn orange">${btnText}</button>`;
   }
 
-  // path_suggested: Trilium bestätigen
-  if (s === 'path_suggested') {
-    const suggestedPath = entry.trilium_suggested_path || '📚 Resources (Standard)';
-    footerHtml += `<div style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;color:var(--text-dim);padding:0.4rem 0;border-top:1px solid var(--border);"></div>`;
-    footerHtml += `<span style="font-size:0.8rem;color:var(--text-dim);margin-right:0.5rem;">🗺️ ${escapeHtml(suggestedPath)}</span>`;
-    footerHtml += `<button onclick="triggerTrilium(${entry.id})" class="detail-action-btn green" style="margin-right:0.5rem;">📂 In Trilium ablegen</button>`;
-    footerHtml += `<button onclick="rejectTrilium(${entry.id})" class="detail-action-btn gray">✖ Ablehnen</button>`;
-  }
+  // path_suggested: Trilium bestätigen / bearbeiten / ablehnen
+    if (s === 'path_suggested') {
+      if (entry.trilium_suggested_path) {
+        // Normal: has suggestion — show actions
+        footerHtml += `<div style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;color:var(--text-dim);padding:0.4rem 0;border-top:1px solid var(--border);"></div>`;
+        footerHtml += `<div class="sb-actions" id="suggestionActions${entry.id}">
+          <button onclick="approveTrilium(${entry.id})" class="sb-btn sb-green" id="appBtn${entry.id}">✅ Freigeben</button>
+          <button onclick="editTriliumPath(${entry.id})" class="sb-btn sb-edit" id="editBtn${entry.id}">✏️ Pfad bearbeiten</button>
+          <button onclick="rejectTrilium(${entry.id})" class="sb-btn sb-gray">✖ Ablehnen</button>
+        </div>
+        <div class="sb-actions" id="suggestionEditActions${entry.id}" style="display:none;">
+          <button onclick="approveEditedTrilium(${entry.id})" class="sb-btn sb-green">✅ Mit Änderungen freigeben</button>
+          <button onclick="cancelEditTrilium(${entry.id})" class="sb-btn sb-gray">← Abbrechen</button>
+        </div>`;
+      } else {
+        // Rejected: no suggestion — show retry hint
+        footerHtml += `<div style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;color:var(--text-dim);padding:0.4rem 0;border-top:1px solid var(--border);"></div>`;
+        footerHtml += `<span style="font-size:0.8rem;color:var(--text-dim);">✖ Vorschlag abgelehnt — Der Kanban-Worker erstellt einen neuen Vorschlag.</span>`;
+      }
+    }
 
   // analyzed (v2 fallback - für alte Entries ohne path_suggested)
   if (s === 'analyzed') {
@@ -2886,6 +2987,78 @@ async function rejectTrilium(entryId) {
   } catch (err) {
     btn.textContent = '❌ Netzwerkfehler';
     setTimeout(() => { btn.disabled = false; btn.textContent = '✖ Ablehnen'; }, 3000);
+  }
+}
+
+// ===== Trilium Path Edit Functions (Issue #51) =====
+
+function editTriliumPath(entryId) {
+  // Switch to edit mode
+  document.getElementById('suggestionDisplay' + entryId).style.display = 'none';
+  document.getElementById('suggestionEdit' + entryId).style.display = 'block';
+  document.getElementById('suggestionActions' + entryId).style.display = 'none';
+  document.getElementById('suggestionEditActions' + entryId).style.display = 'flex';
+  document.getElementById('suggestionInput' + entryId).focus();
+  document.getElementById('suggestionInput' + entryId).select();
+}
+
+function cancelEditTrilium(entryId) {
+  // Switch back to display mode
+  document.getElementById('suggestionDisplay' + entryId).style.display = 'block';
+  document.getElementById('suggestionEdit' + entryId).style.display = 'none';
+  document.getElementById('suggestionActions' + entryId).style.display = 'flex';
+  document.getElementById('suggestionEditActions' + entryId).style.display = 'none';
+}
+
+async function approveEditedTrilium(entryId) {
+  const input = document.getElementById('suggestionInput' + entryId);
+  const editedPath = input.value.trim();
+  if (!editedPath) {
+    input.style.borderColor = 'var(--red)';
+    return;
+  }
+  input.style.borderColor = '';
+  const btn = document.querySelector('#suggestionEditActions' + entryId + ' .sb-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Speichere …';
+  try {
+    const res = await fetch(API + '/api/entries/' + entryId + '/trilium', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trilium_suggested_path: editedPath })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'filed') {
+      btn.textContent = '✅ Abgelegt';
+      setTimeout(() => { closeDetail(); loadEntries(); }, 2000);
+    } else {
+      btn.textContent = '❌ ' + (data.error || 'Fehler');
+      setTimeout(() => { btn.disabled = false; btn.textContent = '✅ Mit Änderungen freigeben'; }, 3000);
+    }
+  } catch (err) {
+    btn.textContent = '❌ Netzwerkfehler';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '✅ Mit Änderungen freigeben'; }, 3000);
+  }
+}
+
+async function approveTrilium(entryId) {
+  // Same as triggerTrilium but with the new name
+  const btn = document.getElementById('appBtn' + entryId);
+  btn.disabled = true;
+  btn.textContent = '⏳ Lege ab …';
+  try {
+    const res = await fetch(API + '/api/entries/' + entryId + '/trilium', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.status === 'filed') {
+      btn.textContent = '✅ Abgelegt';
+      setTimeout(() => { closeDetail(); loadEntries(); }, 2000);
+    } else {
+      btn.textContent = '❌ ' + (data.error || 'Fehler');
+      setTimeout(() => { btn.disabled = false; btn.textContent = '✅ Freigeben'; }, 3000);
+    }
+  } catch (err) {
+    btn.textContent = '❌ Netzwerkfehler';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '✅ Freigeben'; }, 3000);
   }
 }
 
