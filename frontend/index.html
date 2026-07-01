@@ -138,6 +138,30 @@
   .entry-card.card-failed { border-color: rgba(239,68,68,0.3); }
   .entry-card.card-failed:hover { border-color: rgba(239,68,68,0.5); }
 
+  /* Failed Error Block in Detail Modal */
+  .failed-block {
+    display: flex;
+    gap: 0.75rem;
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1rem 0;
+    align-items: flex-start;
+  }
+  .failed-icon { font-size: 1.5rem; flex-shrink: 0; margin-top: 0.1rem; }
+  .failed-content { flex: 1; }
+  .failed-content strong { display: block; margin-bottom: 0.3rem; color: var(--red); }
+  .failed-message {
+    font-size: 0.85rem;
+    color: #f0a0a0;
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    background: rgba(0,0,0,0.2);
+    border-radius: 6px;
+    font-family: monospace;
+  }
+
   /* Card Header — source, author, date, status in one row */
   .card-header {
     display: flex;
@@ -293,7 +317,7 @@
   .status-badge.processing { background: rgba(6,182,212,0.2); color: var(--cyan); animation: pulse 1.5s ease-in-out infinite; }
   .status-badge.analyzed { background: rgba(6,182,212,0.2); color: var(--cyan); }
   .status-badge.filed { background: rgba(34,197,94,0.2); color: var(--green); }
-  .status-badge.failed { background: rgba(239,68,68,0.2); color: var(--red); }
+  .status-badge.failed { background: rgba(239,68,68,0.2); color: var(--red); cursor: help; }
 
   .entry-card .relevance {
     display: inline-block;
@@ -2071,7 +2095,7 @@ async function loadEntries() {
         const label = STEP_LABELS[e.processing_step] || e.processing_step;
         statusHtml = `<span class="status-badge processing">🔄 ${label}</span>`;
       } else {
-        statusHtml = `<span class="status-badge ${e.status}">${e.status}</span>`;
+        statusHtml = `<span class="status-badge ${e.status}"${e.status === 'failed' && e.error_message ? ` title="${escapeHtml(e.error_message)}"` : ''}>${e.status}</span>`;
       }
 
       const entryStatus = e.status;
@@ -2140,25 +2164,33 @@ async function loadEntries() {
 
 // --- Kanban Actions ---
 async function sendToKanban(entryId, btn) {
-  btn.disabled = true;
-  btn.textContent = '⏳ Sende …';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Sende …';
+  }
   try {
     const res = await fetch(API + '/api/entries/' + entryId + '/kanban', { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      btn.className = 'kanban-btn success';
-      btn.textContent = '✅ Gesendet';
+      if (btn) {
+        btn.className = 'kanban-btn success';
+        btn.textContent = '✅ Gesendet';
+      }
       // Refresh nach kurzer Verzögerung
       setTimeout(() => loadEntries(), 2000);
     } else {
-      btn.disabled = false;
-      btn.textContent = '❌ ' + (data.error || 'Fehler');
-      setTimeout(() => { btn.textContent = '📤 Ins Kanban'; btn.disabled = false; }, 3000);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '❌ ' + (data.error || 'Fehler');
+        setTimeout(() => { btn.textContent = '📤 Ins Kanban'; btn.disabled = false; }, 3000);
+      }
     }
   } catch (err) {
-    btn.disabled = false;
-    btn.textContent = '❌ Netzwerkfehler';
-    setTimeout(() => { btn.textContent = '📤 Ins Kanban'; btn.disabled = false; }, 3000);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '❌ Netzwerkfehler';
+      setTimeout(() => { btn.textContent = '📤 Ins Kanban'; btn.disabled = false; }, 3000);
+    }
   }
 }
 
@@ -2633,6 +2665,19 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
 
   let bodyHtml = metaHtml;
   bodyHtml += renderStageProgress(entry.stage_progress, entry.source_type, entry.status);
+
+  // ─── Failed Error Block ───────────────────────────
+  if (entry.status === 'failed') {
+    const errMsg = entry.error_message || 'Keine Detail-Information';
+    bodyHtml += `<div class="failed-block">
+      <div class="failed-icon">⚠️</div>
+      <div class="failed-content">
+        <strong>Dieser Eintrag konnte nicht verarbeitet werden.</strong>
+        <p class="failed-message">${escapeHtml(errMsg)}</p>
+        <button class="kanban-btn" onclick="closeDetail();sendToKanban(${entry.id}, null)">🔄 Erneut versuchen</button>
+      </div>
+    </div>`;
+  }
 
   // ─── Source Info Block ────────────────────────────
   const channelLabels = { dump: '📥 Dump', extension: '🧩 Extension', telegram: '📨 Telegram', playlist: '📋 Playlist' };

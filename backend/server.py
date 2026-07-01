@@ -73,7 +73,7 @@ def _send_to_kanban(entry_id):
 
         # Local DB update (always — fallback if Kanban CLI fails)
         db.execute(
-            "UPDATE entries SET status = ?, processing_step = ? WHERE id = ?",
+            "UPDATE entries SET status = ?, processing_step = ?, error_message = NULL WHERE id = ?",
             (new_status, processing_step, entry_id)
         )
         db.commit()
@@ -1358,7 +1358,7 @@ class Handler(SimpleHTTPRequestHandler):
 
                 updates = []
                 args = []
-                for field in ("status", "content", "analysis", "trilium_suggested_path",
+                for field in ("status", "content", "analysis", "error_message", "trilium_suggested_path",
                               "trilium_note_id", "trilium_target_note_id", "stage_progress",
                               "activity_log"):
                     if field in body:
@@ -1409,6 +1409,10 @@ class Handler(SimpleHTTPRequestHandler):
                         "at": now,
                         "message": status_messages.get(new_status, f"Status: {new_status}"),
                     }
+                    # Append error_message to log entry if status is failed
+                    if new_status == "failed" and body.get("error_message"):
+                        log_entry["error"] = body["error_message"]
+                        log_entry["message"] = f"❌ Fehlgeschlagen: {body['error_message']}"
                     # Read existing log, append
                     existing_log = row["activity_log"]
                     try:

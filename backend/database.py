@@ -45,6 +45,7 @@ def migrate_db():
     existing = {row[1] for row in cursor.fetchall()}
     for col, col_type in [
         ("processing_step", "TEXT"),
+        ("error_message", "TEXT"),
         ("stage_progress", "TEXT"),
         ("thumbnail_url", "TEXT"),
         ("language", "TEXT DEFAULT 'de'"),
