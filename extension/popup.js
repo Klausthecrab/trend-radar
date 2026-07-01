@@ -41,7 +41,7 @@ function renderTabs(tabs) {
               ${escapeHtml(urlDisplay)}
             </div>
           </div>
-          <button class="tab-row-comment-toggle" onclick="toggleComment(${i})" title="Kommentar hinzufügen">✎</button>
+          <button class="tab-row-comment-toggle" data-comment-index="${i}" title="Kommentar hinzufügen">✎</button>
         </div>
         <div class="tab-row-comment" id="comment-${i}">
           <input type="text" placeholder="Optionaler Kommentar …" data-tab-index="${i}">
@@ -49,6 +49,14 @@ function renderTabs(tabs) {
       </div>
     `;
   }).join('');
+
+  // Attach event listeners (MV3 CSP blocks inline onclick)
+  list.querySelectorAll('.tab-row-comment-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.commentIndex);
+      toggleComment(idx);
+    });
+  });
 }
 
 function toggleComment(index) {
