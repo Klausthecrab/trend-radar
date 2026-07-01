@@ -1148,11 +1148,9 @@
   .auto-msg.success { color: var(--green); }
   .auto-msg.error { color: var(--red); }
 
-  /* ===== Playlist Styles ===== */
-  .playlists-toolbar {
-    margin-bottom: 1.25rem;
-  }
-  .pl-btn {
+  /* ===== Component System (Issue #53) ===== */
+  /* --- Base Button --- */
+  .btn {
     padding: 0.6rem 1.1rem;
     border: none;
     border-radius: 8px;
@@ -1161,21 +1159,149 @@
     cursor: pointer;
     transition: opacity 0.2s;
     color: #fff;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    line-height: 1.2;
   }
-  .pl-btn:hover { opacity: 0.85; }
-  .pl-btn-primary { background: linear-gradient(135deg, var(--accent), #6d28d9); }
-  .pl-btn-accent { background: linear-gradient(135deg, var(--cyan), #0891b2); }
-  .pl-btn-small {
-    padding: 0.35rem 0.75rem;
-    font-size: 0.8rem;
+  .btn:hover { opacity: 0.85; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), #6d28d9); }
+  .btn-accent { background: linear-gradient(135deg, var(--cyan), #0891b2); }
+  .btn-ghost {
     background: rgba(255,255,255,0.08);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    cursor: pointer;
     color: var(--text);
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.15); }
+  .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.8rem; border-radius: 6px; }
+  .btn-icon { padding: 0.35rem 0.5rem; border: 1px solid var(--border); background: transparent; border-radius: 6px; color: var(--text-dim); font-size: 0.9rem; }
+  .btn-icon:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+  .btn-analyze { color: var(--cyan); border: 1px solid rgba(6,182,212,0.3); background: rgba(255,255,255,0.04); }
+  .btn-analyze:hover { background: rgba(6,182,212,0.1); }
+  .btn-dismiss { color: var(--text-dim); border: 1px solid var(--border); background: rgba(255,255,255,0.04); }
+  .btn-dismiss:hover { color: var(--orange); background: rgba(245,158,11,0.1); }
+  .btn-check { color: var(--green); border: 1px solid rgba(34,197,94,0.3); background: rgba(255,255,255,0.04); }
+  .btn-check:hover { background: rgba(34,197,94,0.1); }
+  .btn-edit { color: var(--cyan); background: transparent; border: 1px solid var(--border); }
+  .btn-delete { color: var(--red); background: transparent; border: 1px solid var(--border); }
+  .btn-delete:hover { background: rgba(239,68,68,0.1); }
+  .btn-subtle { padding: 0.25rem 0.65rem; border: 1px solid rgba(124,58,237,0.4); border-radius: 6px; background: rgba(124,58,237,0.12); color: var(--accent); font-size: 0.78rem; }
+  .btn-subtle:hover { background: rgba(124,58,237,0.25); }
+  .btn.disabled, .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* --- Badges --- */
+  .badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+    display: inline-block;
+  }
+  .badge-new { background: rgba(245,158,11,0.2); color: var(--orange); }
+  .badge-processing { background: rgba(6,182,212,0.2); color: var(--cyan); animation: pulse 1.5s ease-in-out infinite; }
+  .badge-added { background: rgba(6,182,212,0.2); color: var(--cyan); }
+  .badge-dismissed { background: rgba(100,100,100,0.2); color: var(--text-dim); }
+  .badge-filed { background: rgba(34,197,94,0.2); color: var(--green); }
+  .badge-warning { background: rgba(245,158,11,0.2); color: var(--orange); }
+  .badge-blocked { background: rgba(239,68,68,0.2); color: var(--red); }
+
+  /* --- Data Rows --- */
+  .data-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    transition: background 0.15s;
+  }
+  .data-row:hover { background: var(--card-hover); }
+  .data-row + .data-row { margin-top: 0.5rem; }
+  .dr-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+  .dr-info { min-width: 0; }
+  .dr-title { font-size: 0.9rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.15rem; }
+  .dr-sub { font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-meta { font-size: 0.75rem; color: var(--text-dim); white-space: nowrap; text-align: right; }
+  .dr-actions { display: flex; gap: 0.3rem; white-space: nowrap; }
+
+  /* --- Toolbar --- */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .toolbar-left { display: flex; align-items: center; gap: 0.5rem; flex: 1; }
+  .toolbar-right { display: flex; align-items: center; gap: 0.5rem; }
+
+  /* --- Form --- */
+  .form { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; max-width: 600px; margin: 0 auto; }
+  .form-label { display: block; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.4rem; margin-top: 1rem; }
+  .form-label:first-child { margin-top: 0; }
+  .form-input, .form-select, .form-textarea {
+    width: 100%;
+    padding: 0.7rem;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); box-shadow: 0 0 8px rgba(124,58,237,0.15); }
+  .form-textarea { font-family: inherit; resize: vertical; }
+  .form-hint { font-size: 0.8rem; color: var(--text-dim); margin-bottom: 1rem; padding: 0.5rem 0.75rem; background: rgba(124,58,237,0.08); border-radius: 6px; border: 1px solid rgba(124,58,237,0.15); }
+  .form-feedback { margin-top: 1rem; padding: 0.75rem; border-radius: 8px; display: none; }
+  .form-feedback.success { display: block; background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .form-feedback.error { display: block; background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .form-submit { margin-top: 1.25rem; width: 100%; padding: 0.75rem; background: linear-gradient(135deg, var(--accent), #6d28d9); border: none; border-radius: 8px; color: #fff; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+  .form-submit:hover { opacity: 0.9; }
+  .form-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* --- Chip Filter --- */
+  .chip {
+    padding: 0.35rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
     transition: all 0.2s;
   }
+  .chip:hover { color: var(--text); background: var(--card-hover); }
+  .chip.active { background: rgba(6,182,212,0.2); color: var(--cyan); border-color: rgba(6,182,212,0.3); }
+
+  /* (Legacy) pl-btn kanban-btn dump-form button — kept as backwards-compat aliases */
+  .pl-btn, .kanban-btn { all: unset; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.6rem 1.1rem; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; color: #fff; }
+  .pl-btn:hover, .kanban-btn:hover { opacity: 0.85; }
+  .pl-btn-primary { background: linear-gradient(135deg, var(--accent), #6d28d9); }
+  .pl-btn-accent { background: linear-gradient(135deg, var(--cyan), #0891b2); }
+  .pl-btn-small { all: unset; padding: 0.35rem 0.75rem; font-size: 0.8rem; background: rgba(255,255,255,0.08); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--text); transition: all 0.2s; display: inline-flex; align-items: center; gap: 0.3rem; }
   .pl-btn-small:hover { background: rgba(255,255,255,0.15); }
+  .kanban-btn { padding: 0.25rem 0.65rem; border: 1px solid rgba(124,58,237,0.4); border-radius: 6px; background: rgba(124,58,237,0.12); color: var(--accent); font-size: 0.78rem; }
+  .kanban-btn:hover { background: rgba(124,58,237,0.25); }
+  .kanban-btn:disabled { opacity: 0.4; cursor: not-allowed; background: rgba(100,100,100,0.1); border-color: var(--border); color: var(--text-dim); }
+  .kanban-btn.success { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.3); color: var(--green); }
+  .kanban-refresh-btn { padding: 0.5rem 1rem; border: 1px solid rgba(124,58,237,0.3); border-radius: 8px; background: rgba(124,58,237,0.15); color: #fff; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; display: inline-flex; align-items: center; gap: 0.35rem; }
+  .kanban-refresh-btn:hover { background: rgba(124,58,237,0.3); }
+  .kanban-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .chip-btn { padding: 0.35rem 0.85rem; border: 1px solid var(--border); border-radius: 20px; background: transparent; color: var(--text-dim); font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+  .chip-btn:hover { color: var(--text); background: var(--card-hover); }
+  .chip-btn.active { background: rgba(6,182,212,0.2); color: var(--cyan); border-color: rgba(6,182,212,0.3); }
+  .dump-form { all: unset; display: block; max-width: 600px; margin: 0 auto; }
+  .dump-form button { all: unset; display: block; width: 100%; margin-top: 1.25rem; padding: 0.75rem; background: linear-gradient(135deg, var(--accent), #6d28d9); border: none; border-radius: 8px; color: #fff; font-size: 0.95rem; font-weight: 600; cursor: pointer; text-align: center; transition: opacity 0.2s; }
+  .dump-form button:hover { opacity: 0.9; }
+  .dump-form button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ===== Playlist Styles ===== */
+  /* (Legacy .pl-btn, .pl-btn-primary, etc. — migrated to .btn system) */
+  .playlists-toolbar { margin-bottom: 1.25rem; }
 
   .playlist-cards {
     display: grid;
@@ -1296,74 +1422,9 @@
     flex-direction: column;
     gap: 0.5rem;
   }
-  .video-row {
-    display: grid;
-    grid-template-columns: 32px 1fr auto auto auto;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.6rem 0.75rem;
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(255,255,255,0.04);
-    border-radius: 8px;
-    transition: background 0.15s;
-  }
+  /* (Legacy .video-row, .v-badge, .v-* — migrated to .data-row, .badge, .btn) */
+  .video-row { all: unset; display: grid; grid-template-columns: 32px 1fr auto auto auto; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); border-radius: 8px; transition: background 0.15s; }
   .video-row:hover { background: rgba(255,255,255,0.05); }
-  .video-row .v-checkbox {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-    accent-color: var(--accent);
-  }
-  .video-row .v-info {
-    min-width: 0;
-  }
-  .video-row .v-info .v-title {
-    font-size: 0.9rem;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
-  }
-  .video-row .v-info .v-title:hover { color: var(--cyan); }
-  .video-row .v-info .v-channel {
-    font-size: 0.78rem;
-    color: var(--text-dim);
-  }
-  .video-row .v-date {
-    font-size: 0.78rem;
-    color: var(--text-dim);
-    white-space: nowrap;
-  }
-  .video-row .v-actions {
-    display: flex;
-    gap: 0.3rem;
-    white-space: nowrap;
-  }
-  .video-row .v-actions button {
-    padding: 0.25rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    background: rgba(255,255,255,0.04);
-    color: var(--text);
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .video-row .v-actions button:hover { background: rgba(255,255,255,0.1); }
-  .video-row .v-actions button.v-analyze { color: var(--cyan); border-color: rgba(6,182,212,0.3); }
-  .video-row .v-actions button.v-dismiss { color: var(--text-dim); }
-  .video-row .v-actions button.v-dismiss:hover { color: var(--orange); }
-  .video-row .v-badge {
-    font-size: 0.7rem;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-weight: 600;
-  }
-  .v-badge.new { background: rgba(245,158,11,0.2); color: var(--orange); }
-  .v-badge.added { background: rgba(6,182,212,0.2); color: var(--cyan); }
-  .v-badge.dismissed { background: rgba(100,100,100,0.2); color: var(--text-dim); }
-  .v-badge.filed { background: rgba(34,197,94,0.2); color: var(--green); }
 
   @media (max-width: 768px) {
     .video-row {
@@ -1408,80 +1469,9 @@
     border-color: rgba(6,182,212,0.3);
   }
   .telegram-list { display: flex; flex-direction: column; gap: 0.5rem; }
-  .telegram-row {
-    display: grid;
-    grid-template-columns: 28px 1fr auto auto;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.7rem 1rem;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    transition: background 0.15s;
-  }
+  /* (Legacy .telegram-row, .t-badge, .t-* — migrated to .data-row, .badge, .btn) */
+  .telegram-row { all: unset; display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 0.75rem; padding: 0.7rem 1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; transition: background 0.15s; }
   .telegram-row:hover { background: var(--card-hover); }
-  .telegram-row .t-checkbox {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-    accent-color: var(--accent);
-  }
-  .telegram-row .t-info { min-width: 0; }
-  .telegram-row .t-title {
-    font-size: 0.9rem;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 0.15rem;
-  }
-  .telegram-row .t-url {
-    font-size: 0.78rem;
-    color: var(--text-dim);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .telegram-row .t-url .source-badge {
-    margin-right: 0.4rem;
-  }
-  .telegram-row .t-meta {
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    white-space: nowrap;
-    text-align: right;
-  }
-  .telegram-row .t-actions {
-    display: flex;
-    gap: 0.3rem;
-    white-space: nowrap;
-  }
-  .telegram-row .t-actions button {
-    padding: 0.25rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    background: rgba(255,255,255,0.04);
-    color: var(--text);
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .telegram-row .t-actions button:hover { background: rgba(255,255,255,0.1); }
-  .telegram-row .t-actions button.t-analyze { color: var(--cyan); border-color: rgba(6,182,212,0.3); }
-  .telegram-row .t-actions button.t-dismiss { color: var(--orange); }
-  .telegram-row .t-actions button.t-dismiss:hover { background: rgba(245,158,11,0.1); }
-  .telegram-row .t-actions button.t-filed { color: var(--green); border-color: rgba(34,197,94,0.3); }
-  .telegram-row .t-badge {
-    font-size: 0.7rem;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-weight: 600;
-  }
-  .t-badge.new { background: rgba(245,158,11,0.2); color: var(--orange); }
-  .t-badge.processing { background: rgba(6,182,212,0.2); color: var(--cyan); animation: pulse 1.5s ease-in-out infinite; }
-  .t-badge.added { background: rgba(6,182,212,0.2); color: var(--cyan); }
-  .t-badge.dismissed { background: rgba(100,100,100,0.2); color: var(--text-dim); }
-  .t-badge.filed { background: rgba(34,197,94,0.2); color: var(--green); }
 
   /* ===== Detail Modal: Source Info ===== */
   .detail-source {
@@ -1870,28 +1860,32 @@
 
   <!-- Entries Panel -->
   <div class="panel" id="panelEntries">
-    <div class="controls">
+    <div class="toolbar">
       <div class="filter">
         <select id="statusFilter" onchange="loadEntries()">
-          <option value="">Alle Status</option>
+          <option value="">Alle</option>
           <option value="new">Neu</option>
-          <option value="pre_analyzed">Voranalsysiert</option>
+          <option value="pre_analyzed">Vorangeprüft</option>
+          <option value="analyzing">Analysiere</option>
           <option value="analyzed">Analysiert</option>
           <option value="filed">Abgelegt</option>
           <option value="failed">Fehlgeschlagen</option>
         </select>
         <select id="sourceFilter" onchange="loadEntries()">
           <option value="">Alle Quellen</option>
-          <option value="reddit">Reddit</option>
-          <option value="youtube">YouTube</option>
-          <option value="rss">RSS/Feed</option>
-          <option value="web">Web</option>
+          <option value="web">🌐 Web</option>
+          <option value="youtube">🎬 YouTube</option>
+          <option value="reddit">🗨️ Reddit</option>
+          <option value="rss">📡 RSS</option>
         </select>
       </div>
-      <div class="kanban-bulk-bar" id="kanbanBulkBar">
-        <button class="kanban-bulk-btn hidden" id="bulkKanbanBtn" onclick="bulkSendToKanban()">📤 Alle neuen ins Kanban</button>
+      <div class="toolbar-right">
+        <span class="last-updated" id="entriesUpdated"></span>
+        <button class="btn btn-ghost btn-sm" onclick="loadEntries()">⟳</button>
       </div>
-      <div class="last-updated" id="entriesUpdated"></div>
+    </div>
+    <div class="kanban-bulk-bar" id="kanbanBulkBar">
+      <button class="kanban-bulk-btn hidden" id="bulkKanbanBtn" onclick="bulkSendToKanban()">📤 Alle neuen ins Kanban</button>
     </div>
     <div class="entry-list" id="entryList">
       <div class="empty-state">Lade Einträge …</div>
@@ -1900,9 +1894,9 @@
 
   <!-- Kanban Panel -->
   <div class="panel" id="panelKanban">
-    <div class="kanban-toolbar">
+    <div class="toolbar">
       <div class="kanban-info" id="kanbanInfo">Lade Board …</div>
-      <button class="kanban-refresh-btn" id="kanbanRefreshBtn" onclick="loadKanbanBoard()">⟳ Aktualisieren</button>
+      <button class="btn btn-ghost btn-sm" id="kanbanRefreshBtn" onclick="loadKanbanBoard()">⟳ Aktualisieren</button>
     </div>
     <div class="kanban-board" id="kanbanBoard">
       <div class="kanban-loading">📋 Lade Kanban-Board …</div>
@@ -1946,23 +1940,23 @@
 
   <!-- Dump Panel -->
   <div class="panel" id="panelDump">
-    <div class="dump-form">
-      <div class="option-hint">Felder werden automatisch erkannt — nur die URL(s) sind Pflicht</div>
-      <label>URLs <span class="optional">(eine pro Zeile)</span></label>
-      <textarea id="dumpUrls" rows="4" placeholder="https://youtube.com/watch?v=...
+    <div class="form">
+      <div class="form-hint">Felder werden automatisch erkannt — nur die URL(s) sind Pflicht</div>
+      <label class="form-label">URLs <span class="optional">(eine pro Zeile)</span></label>
+      <textarea class="form-textarea" id="dumpUrls" rows="4" placeholder="https://youtube.com/watch?v=...
 https://reddit.com/r/selfhosted/...
 https://example.com/blog/..."></textarea>
-      <label>Quell-Typ <span class="optional">(optional)</span></label>
-      <select id="dumpType">
+      <label class="form-label">Quell-Typ <span class="optional">(optional)</span></label>
+      <select class="form-select" id="dumpType">
         <option value="">🔍 Automatisch</option>
         <option value="youtube">🎬 YouTube</option>
         <option value="reddit">🗨️ Reddit</option>
         <option value="web">🌐 Web/URL</option>
       </select>
-      <label>Titel <span class="optional">(optional)</span></label>
-      <input type="text" id="dumpTitle" placeholder="Wird automatisch ermittelt">
-      <button id="dumpBtn" onclick="submitDump()">📥 Einsenden</button>
-      <div id="dumpFeedback" class="dump-feedback"></div>
+      <label class="form-label">Titel <span class="optional">(optional)</span></label>
+      <input class="form-input" type="text" id="dumpTitle" placeholder="Wird automatisch ermittelt">
+      <button class="form-submit" id="dumpBtn" onclick="submitDump()">📥 Einsenden</button>
+      <div id="dumpFeedback" class="form-feedback"></div>
       <div id="dumpResults" class="dump-results"></div>
     </div>
   </div>
@@ -1970,8 +1964,8 @@ https://example.com/blog/..."></textarea>
 
 <!-- Telegram Panel -->
 <div class="panel" id="panelTelegram">
-  <div class="telegram-toolbar">
-    <button class="pl-btn pl-btn-accent" onclick="checkTelegramPoll()">⟳ Jetzt prüfen</button>
+  <div class="toolbar">
+    <button class="btn btn-accent" onclick="checkTelegramPoll()">⟳ Jetzt prüfen</button>
     <div class="telegram-filters" id="telegramFilters">
       <button class="chip-btn active" data-filter="" onclick="filterTelegram(this, '')">Alle</button>
       <button class="chip-btn" data-filter="new" onclick="filterTelegram(this, 'new')">Neu</button>
@@ -1980,17 +1974,17 @@ https://example.com/blog/..."></textarea>
     </div>
   </div>
   <div class="telegram-list" id="telegramList">
-    <div class="empty-state">📨 Noch keine geteilten Links<br><br>Schicke URLs an deinen Telegram-Bot per DM oder über den "Teilen"-Button.<br><br><button class="pl-btn pl-btn-accent" onclick="checkTelegramPoll()" style="margin-top:0.5rem;">⟳ Jetzt prüfen</button></div>
+    <div class="empty-state">📨 Noch keine geteilten Links<br><br>Schicke URLs an deinen Telegram-Bot per DM oder über den "Teilen"-Button.<br><br><button class="btn btn-accent" onclick="checkTelegramPoll()" style="margin-top:0.5rem;">⟳ Jetzt prüfen</button></div>
   </div>
   <div id="telegramBulkActions" style="display:none;margin-top:1rem;">
-    <button class="pl-btn pl-btn-primary" onclick="bulkAddTelegram()">🔍 Ausgewählte analysieren (<span id="telegramBulkCount">0</span>)</button>
+    <button class="btn btn-primary" onclick="bulkAddTelegram()">🔍 Ausgewählte analysieren (<span id="telegramBulkCount">0</span>)</button>
   </div>
 </div>
 
 <!-- Playlists Panel -->
 <div class="panel" id="panelPlaylists">
-  <div class="playlists-toolbar">
-    <button class="pl-btn pl-btn-primary" onclick="showPlaylistModal()">➕ Playlist hinzufügen</button>
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="showPlaylistModal()">➕ Playlist hinzufügen</button>
   </div>
   <div class="playlist-cards" id="playlistCards">
     <div class="empty-state">Lade Playlists …</div>
@@ -1998,7 +1992,7 @@ https://example.com/blog/..."></textarea>
   <div class="videos-section" id="videosSection" style="display:none;">
     <div class="videos-header">
       <h3 id="videosSectionTitle">—</h3>
-      <button class="pl-btn pl-btn-small" onclick="closeVideosSection()">✕ Schließen</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeVideosSection()">✕ Schließen</button>
     </div>
     <div class="videos-filter">
       <select id="videoStatusFilter" onchange="loadVideos()">
@@ -2013,7 +2007,7 @@ https://example.com/blog/..."></textarea>
       <div class="empty-state">Wähle eine Playlist aus</div>
     </div>
     <div id="bulkActions" style="display:none;margin-top:1rem;">
-      <button class="pl-btn pl-btn-accent" onclick="bulkAddSelected()">🔍 Ausgewählte analysieren (<span id="bulkCount">0</span>)</button>
+      <button class="btn btn-accent" onclick="bulkAddSelected()">🔍 Ausgewählte analysieren (<span id="bulkCount">0</span>)</button>
     </div>
   </div>
 </div>
@@ -2039,8 +2033,8 @@ https://example.com/blog/..."></textarea>
           <option value="48">48 Stunden</option>
           <option value="168">7 Tage</option>
         </select>
-        <div id="plFeedback" class="dump-feedback"></div>
-        <button id="plSaveBtn" onclick="savePlaylist()">💾 Speichern</button>
+        <div id="plFeedback" class="form-feedback"></div>
+        <button class="form-submit" id="plSaveBtn" onclick="savePlaylist()">💾 Speichern</button>
       </div>
     </div>
   </div>
@@ -2048,9 +2042,11 @@ https://example.com/blog/..."></textarea>
 
 <!-- YouTube-Log Panel -->
 <div class="panel" id="panelYoutube">
-  <div class="controls">
+  <div class="toolbar">
     <div class="last-updated" id="youtubeUpdated"></div>
-  </div>
+    <div class="toolbar-right">
+      <button class="btn btn-ghost btn-sm" onclick="loadYoutubeGallery()">⟳</button>
+    </div>
   <div class="youtube-gallery" id="youtubeGallery">
     <div class="empty-state">Lade YouTube-Einträge …</div>
   </div>
@@ -2238,9 +2234,9 @@ async function loadEntries() {
             ${(() => {
               const entryPipeline = e.source_type === 'youtube' ? pipelineYt : pipelineWeb;
               if (!entryPipeline && (entryStatus === 'new' || entryStatus === 'pre_analyzed'))
-                return '<button class="kanban-btn" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">📤 Ins Kanban</button>';
+                return '<button class="btn btn-subtle" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">📤 Ins Kanban</button>';
               if (!entryPipeline && entryStatus === 'failed')
-                return '<button class="kanban-btn" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">🔄 Erneut versuchen</button>';
+                return '<button class="btn btn-subtle" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">🔄 Erneut versuchen</button>';
               return '';
             })()}
           </div>
@@ -2290,7 +2286,7 @@ async function sendToKanban(entryId, btn) {
     const data = await res.json();
     if (res.ok) {
       if (btn) {
-        btn.className = 'kanban-btn success';
+        btn.className = 'btn btn-subtle success';
         btn.textContent = '✅ Gesendet';
       }
       // Refresh nach kurzer Verzögerung
@@ -2947,7 +2943,7 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
       <div class="failed-content">
         <strong>Dieser Eintrag konnte nicht verarbeitet werden.</strong>
         <p class="failed-message">${escapeHtml(errMsg)}</p>
-        <button class="kanban-btn" onclick="closeDetail();sendToKanban(${entry.id}, null)">🔄 Erneut versuchen</button>
+        <button class="btn btn-subtle" onclick="closeDetail();sendToKanban(${entry.id}, null)">🔄 Erneut versuchen</button>
       </div>
     </div>`;
   }
@@ -3291,7 +3287,7 @@ async function loadTelegramInbox() {
     const items = await res.json();
 
     if (!items.length) {
-      container.innerHTML = '<div class="empty-state">📨 Noch keine geteilten Links<br><br>Schicke URLs an deinen Telegram-Bot per DM oder über den "Teilen"-Button.<br><br><button class="pl-btn pl-btn-accent" onclick="checkTelegramPoll()" style="margin-top:0.5rem;">⟳ Jetzt prüfen</button></div>';
+      container.innerHTML = '<div class="empty-state">📨 Noch keine geteilten Links<br><br>Schicke URLs an deinen Telegram-Bot per DM oder über den "Teilen"-Button.<br><br><button class="btn btn-accent" onclick="checkTelegramPoll()" style="margin-top:0.5rem;">⟳ Jetzt prüfen</button></div>';
       document.getElementById('telegramBulkActions').style.display = 'none';
       return;
     }
@@ -3314,27 +3310,27 @@ async function loadTelegramInbox() {
       let badgeHtml = '';
 
       if (item.status === 'new') {
-        badgeHtml = `<span class="t-badge new">Neu</span>`;
+        badgeHtml = `<span class="badge badge-new">Neu</span>`;
         actionsHtml = `
-          <button class="t-analyze" onclick="addTelegramEntry(${item.id})">🔍 Analysieren</button>
-          <button class="t-dismiss" onclick="dismissTelegramEntry(${item.id})">✖</button>
+          <button class="btn btn-analyze" onclick="addTelegramEntry(${item.id})">🔍 Analysieren</button>
+          <button class="btn btn-icon" onclick="dismissTelegramEntry(${item.id})">✖</button>
         `;
       } else if (item.status === 'added') {
-        badgeHtml = `<span class="t-badge added">In Analyse</span>`;
+        badgeHtml = `<span class="badge badge-added">In Analyse</span>`;
         actionsHtml = `<span style="font-size:0.75rem;color:var(--cyan);">✅ Übernommen</span>`;
       } else if (item.status === 'dismissed') {
-        badgeHtml = `<span class="t-badge dismissed">Ignoriert</span>`;
+        badgeHtml = `<span class="badge badge-dismissed">Ignoriert</span>`;
         actionsHtml = `<span style="font-size:0.75rem;color:var(--text-dim);">✖ Ignoriert</span>`;
       }
 
-      return `<div class="telegram-row" id="trow-${item.id}">
-        <input type="checkbox" class="t-checkbox" ${checked} onchange="updateTelegramBulkBtn()" value="${item.id}">
-        <div class="t-info">
-          <div class="t-title">${escapeHtml(title)}</div>
-          <div class="t-url">${sourceBadge} ${escapeHtml(shortUrl)}</div>
+      return `<div class="data-row" id="trow-${item.id}">
+        <input type="checkbox" class="dr-checkbox" ${checked} onchange="updateTelegramBulkBtn()" value="${item.id}">
+        <div class="dr-info">
+          <div class="dr-title">${escapeHtml(title)}</div>
+          <div class="dr-sub">${sourceBadge} ${escapeHtml(shortUrl)}</div>
         </div>
-        <div class="t-meta">${date}${sender ? ' · ' + escapeHtml(sender) : ''} ${badgeHtml}</div>
-        <div class="t-actions">${actionsHtml}</div>
+        <div class="dr-meta">${date}${sender ? ' · ' + escapeHtml(sender) : ''} ${badgeHtml}</div>
+        <div class="dr-actions">${actionsHtml}</div>
       </div>`;
     }).join('');
 
@@ -3409,7 +3405,7 @@ async function bulkAddTelegram() {
 }
 
 async function checkTelegramPoll() {
-  const btn = event && event.target ? event.target : document.querySelector('.telegram-toolbar .pl-btn-accent');
+  const btn = event && event.target ? event.target : document.querySelector('.toolbar .btn-accent');
   btn.disabled = true;
   btn.textContent = '⏳ Prüfe…';
   try {
@@ -3461,9 +3457,9 @@ async function loadPlaylists() {
         </div>
         <div class="pl-last-checked">Letzter Check: ${lastCheck}</div>
         <div class="pl-actions">
-          <button class="pl-check" onclick="event.stopPropagation();checkPlaylist(${p.id})">⟳ Jetzt prüfen</button>
-          <button class="pl-edit" onclick="event.stopPropagation();editPlaylist(${p.id})">⚙</button>
-          <button class="pl-delete" onclick="event.stopPropagation();deletePlaylist(${p.id})">🗑</button>
+          <button class="btn btn-check btn-sm" onclick="event.stopPropagation();checkPlaylist(${p.id})">⟳ Jetzt prüfen</button>
+          <button class="btn btn-edit btn-sm" onclick="event.stopPropagation();editPlaylist(${p.id})">⚙</button>
+          <button class="btn btn-delete btn-sm" onclick="event.stopPropagation();deletePlaylist(${p.id})">🗑</button>
         </div>
       </div>`;
     }).join('');
@@ -3503,27 +3499,27 @@ async function loadVideos() {
     table.innerHTML = videos.map(v => {
       const ytUrl = 'https://youtube.com/watch?v=' + v.video_id;
       const date = v.published_at ? new Date(v.published_at).toLocaleDateString('de-DE') : '';
-      const statusBadge = '<span class="v-badge ' + v.status + '">' + v.status + '</span>';
+      const statusBadge = '<span class="badge badge-' + v.status + '">' + v.status + '</span>';
       let actions = '';
       if (v.status === 'new') {
-        actions = '<button class="v-analyze" onclick="addVideoToEntry(' + selectedPlaylistId + ',\'' + v.video_id + '\')">🔍 Analysieren</button>'
-          + '<button class="v-dismiss" onclick="dismissVideo(' + selectedPlaylistId + ',\'' + v.video_id + '\')">✖ Ignorieren</button>';
+        actions = '<button class="btn btn-analyze" onclick="addVideoToEntry(' + selectedPlaylistId + ',\'' + v.video_id + '\')">🔍 Analysieren</button>'
+          + '<button class="btn btn-icon" onclick="dismissVideo(' + selectedPlaylistId + ',\'' + v.video_id + '\')">✖</button>';
       } else if (v.status === 'added') {
         actions = '<span style="font-size:0.75rem;color:var(--cyan);">✅ In Analyse</span>';
       } else if (v.status === 'dismissed') {
         actions = '<span style="font-size:0.75rem;color:var(--text-dim);">✖ Ignoriert</span>';
       }
       const checkbox = v.status === 'new'
-        ? '<input type="checkbox" class="v-checkbox" data-video-id="' + v.video_id + '" data-playlist-id="' + selectedPlaylistId + '" onchange="updateBulkActions()">'
+        ? '<input type="checkbox" class="dr-checkbox" data-video-id="' + v.video_id + '" data-playlist-id="' + selectedPlaylistId + '" onchange="updateBulkActions()">'
         : '';
-      return '<div class="video-row">'
+      return '<div class="data-row">'
         + '<div>' + checkbox + '</div>'
-        + '<div class="v-info">'
-          + '<div class="v-title" onclick="window.open(\'' + ytUrl + '\',\'_blank\')">' + escapeHtml(v.title || 'Kein Titel') + '</div>'
-          + '<div class="v-channel">' + escapeHtml(v.channel || '') + '</div>'
+        + '<div class="dr-info">'
+          + '<div class="dr-title" onclick="window.open(\'' + ytUrl + '\',\'_blank\')">' + escapeHtml(v.title || 'Kein Titel') + '</div>'
+          + '<div class="dr-sub">' + escapeHtml(v.channel || '') + '</div>'
         + '</div>'
-        + '<div class="v-date">' + date + '</div>'
-        + '<div class="v-actions">' + actions + '</div>'
+        + '<div class="dr-meta">' + date + '</div>'
+        + '<div class="dr-actions">' + actions + '</div>'
         + '<div>' + statusBadge + '</div>'
         + '</div>';
     }).join('');
