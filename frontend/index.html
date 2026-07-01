@@ -964,20 +964,92 @@
     .modal-header, .modal-body, .modal-footer { padding: 1rem; }
   }
 
-  /* ===== Automatik Toggle ===== */
-  .auto-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.6rem 1rem;
+  /* ===== Pipeline Section ===== */
+  .pipeline-section {
+    margin-bottom: 1.5rem;
+  }
+  .pipeline-section-title {
+    font-size: 1rem;
+    font-weight: 600;
     margin-bottom: 0.75rem;
+    color: var(--text);
+  }
+  .pipeline-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  @media (max-width: 700px) {
+    .pipeline-cards { grid-template-columns: 1fr; }
+  }
+  .pipeline-card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
+    padding: 1rem;
   }
-  .auto-label {
-    font-size: 0.9rem;
+  .pipeline-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .pipeline-card-title {
     font-weight: 600;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .pipeline-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .pipeline-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 8px;
+    transition: all 0.3s;
+  }
+  .pipeline-status.on {
+    background: rgba(34,197,94,0.15);
+    color: var(--green);
+  }
+  .pipeline-status.off {
+    background: rgba(255,255,255,0.05);
+    color: var(--text-dim);
+  }
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .pl-flow-step {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.75rem;
+    color: var(--text);
+    background: rgba(255,255,255,0.04);
+    padding: 0.2rem 0.4rem;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .pl-flow-arrow {
+    color: var(--text-dim);
+    font-size: 0.7rem;
+  }
+  .pipeline-desc {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    line-height: 1.4;
+    margin-bottom: 0.5rem;
   }
   .toggle-switch {
     position: relative;
@@ -1392,17 +1464,6 @@
     <p>Nach vorne statt nach hinten — Trends erkennen, bevor sie Standard sind</p>
   </div>
 
-  <!-- Automatik Toggle -->
-  <div class="auto-bar" id="autoBar">
-    <span class="auto-label">🤖 Automatik</span>
-    <label class="toggle-switch">
-      <input type="checkbox" id="autoToggle" onchange="toggleAutomatik()">
-      <span class="toggle-slider"></span>
-    </label>
-    <span class="auto-status" id="autoStatus">AN</span>
-    <span class="auto-msg" id="autoMsg"></span>
-  </div>
-
   <!-- Tabs -->
   <div class="tabs">
     <button class="tab-btn active" id="tabStatus" onclick="switchTab('status')">📊 Status</button>
@@ -1436,6 +1497,65 @@
       </div>
     </div>
 
+    <!-- Pipeline Status -->
+    <div class="pipeline-section">
+      <div class="pipeline-section-title">🧩 Pipelines</div>
+      <div class="pipeline-cards">
+        <!-- Web-Pipeline -->
+        <div class="pipeline-card">
+          <div class="pipeline-card-header">
+            <span class="pipeline-card-title">🔗 Web / Artikel</span>
+            <div class="pipeline-controls">
+              <span class="pipeline-status" id="plStatusWeb">AUS</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="plToggleWeb" onchange="togglePipeline('web')">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="pipeline-flow">
+            <span class="pl-flow-step">📥 Neu</span>
+            <span class="pl-flow-arrow">→</span>
+            <span class="pl-flow-step">🔎 Analysieren</span>
+            <span class="pl-flow-arrow">→</span>
+            <span class="pl-flow-step">🏷️ Pfad vorschlagen</span>
+            <span class="pl-flow-arrow">→</span>
+            <span class="pl-flow-step">✅ In Trilium</span>
+          </div>
+          <div class="pipeline-desc">
+            Blog-Artikel, Reddit-Posts, Dokumentationen — werden per LLM auf Homelab-Relevanz geprüft und mit Pfad-Vorschlag in Trilium abgelegt.
+          </div>
+        </div>
+        <!-- YouTube-Pipeline -->
+        <div class="pipeline-card">
+          <div class="pipeline-card-header">
+            <span class="pipeline-card-title">🎬 YouTube</span>
+            <div class="pipeline-controls">
+              <span class="pipeline-status" id="plStatusYt">AUS</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="plToggleYt" onchange="togglePipeline('youtube')">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="pipeline-flow">
+            <span class="pl-flow-step">📥 Neu</span>
+            <span class="pl-flow-arrow">→</span>
+            <span class="pl-flow-step">🎤 Transkribieren</span>
+            <span class="pl-flow-arrow">→</span>
+            <span class="pl-flow-step">🔎 Analysieren</span>
+            <span class="pl-flow-arrow">→</span>
+            <span class="pl-flow-step">🏷️ Pfad vorschlagen</span>
+            <span class="pl-flow-arrow">→</span>
+            <span class="pl-flow-step">✅ In Trilium</span>
+          </div>
+          <div class="pipeline-desc">
+            YouTube-Videos werden transkribiert (yt-dlp + Venice STT), dann per LLM analysiert und mit Pfad-Vorschlag in Trilium abgelegt.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Kanban-Worker Status -->
     <div class="how-it-works" id="workerStatusBlock">
       <div class="hiw-header">🤖 Kanban-Worker</div>
@@ -1457,8 +1577,12 @@
           <span class="hiw-desc" id="workerCardsInQueue">0 Karten</span>
         </div>
         <div class="hiw-row">
-          <span class="hiw-label">Automatik</span>
-          <span class="hiw-desc" id="workerAutomatik">—</span>
+          <span class="hiw-label">Web-Pipeline</span>
+          <span class="hiw-desc" id="workerWebPipeline">—</span>
+        </div>
+        <div class="hiw-row">
+          <span class="hiw-label">YouTube-Pipeline</span>
+          <span class="hiw-desc" id="workerYtPipeline">—</span>
         </div>
         <div class="hiw-divider"></div>
         <div class="hiw-legend" style="font-size:0.8rem;">
@@ -1486,7 +1610,7 @@
             <span>Eintrag landet in Trend Radar</span>
           </div>
           <div class="hiw-sub">
-            🤖 Automatik AN: sofort als Kanban-Karte &nbsp;|&nbsp; 🔘 Automatik AUS: „📤 Ins Kanban"-Button nötig
+            🔗 Web: nur wenn AN &nbsp;|&nbsp; 🎬 YouTube: nur wenn AN &nbsp;|&nbsp; 🔘 AUS: "📤 Ins Kanban"-Button nötig
           </div>
           <div class="hiw-step">
             <span class="hiw-icon">🗂️</span>
@@ -1680,7 +1804,8 @@ https://example.com/blog/..."></textarea>
 
 <script>
 const API = '';
-let automatikAn = true;     // globaler State, wird von loadAutomatik() gesetzt
+let pipelineWeb = false;    // Pipeline-Toggle States (vom Config-Endpoint)
+let pipelineYt = false;
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1730,7 +1855,8 @@ async function loadStatus() {
       : '— (noch kein Heartbeat)';
     document.getElementById('workerLastResult').textContent = w.last_result === 'ok' ? '✅ Erfolgreich' : (w.last_result === 'error' ? '❌ Fehler' : '—');
     document.getElementById('workerCardsInQueue').textContent = w.cards_in_queue + ' Karte' + (w.cards_in_queue !== 1 ? 'n' : '');
-    document.getElementById('workerAutomatik').textContent = w.automatik_an ? '🤖 AN' : '🔘 AUS';
+    document.getElementById('workerWebPipeline').textContent = w.pipeline_web ? '🤖 AN' : '🔘 AUS';
+    document.getElementById('workerYtPipeline').textContent = w.pipeline_youtube ? '🤖 AN' : '🔘 AUS';
   } catch {}
 }
 
@@ -1841,9 +1967,12 @@ async function loadEntries() {
             ${e.status === 'analyzed' && e.trilium_suggested_path ? '<span class="card-path-badge suggested">🗺️ ' + escapeHtml(e.trilium_suggested_path.split(' > ').pop()) + '</span>' : ''}
           </div>
           <div class="card-footer-right">
-            ${!automatikAn && (entryStatus === 'new' || entryStatus === 'pre_analyzed' || entryStatus === 'failed')
-              ? '<button class="kanban-btn" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">📤 Ins Kanban</button>'
-              : ''}
+            ${(() => {
+              const entryPipeline = e.source_type === 'youtube' ? pipelineYt : pipelineWeb;
+              return !entryPipeline && (entryStatus === 'new' || entryStatus === 'pre_analyzed' || entryStatus === 'failed')
+                ? '<button class="kanban-btn" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">📤 Ins Kanban</button>'
+                : '';
+            })()}
           </div>
         </div>
       </div>`;
@@ -1864,10 +1993,13 @@ async function loadEntries() {
       startAutoRefresh();
     }
 
-    // Bulk-Kanban-Button anzeigen wenn Automatik AUS + neue/pre_analyzed/failed Einträge existieren
-    const hasNewOrFailed = entries.some(e => e.status === 'new' || e.status === 'pre_analyzed' || e.status === 'failed');
+    // Bulk-Kanban-Button anzeigen wenn Pipeline AUS + neue/pre_analyzed/failed Einträge existieren
+    const hasNewOrFailed = entries.some(e => {
+      const pl = e.source_type === 'youtube' ? pipelineYt : pipelineWeb;
+      return !pl && (e.status === 'new' || e.status === 'pre_analyzed' || e.status === 'failed');
+    });
     const bulkBtn = document.getElementById('bulkKanbanBtn');
-    if (!automatikAn && hasNewOrFailed) {
+    if (hasNewOrFailed) {
       bulkBtn.classList.remove('hidden');
     } else {
       bulkBtn.classList.add('hidden');
@@ -1911,7 +2043,10 @@ async function bulkSendToKanban() {
   try {
     const res = await fetch(API + '/api/entries?limit=200');
     const entries = await res.json();
-    const candidates = entries.filter(e => !automatikAn && (e.status === 'new' || e.status === 'pre_analyzed' || e.status === 'failed'));
+    const candidates = entries.filter(e => {
+      const pl = e.source_type === 'youtube' ? pipelineYt : pipelineWeb;
+      return !pl && (e.status === 'new' || e.status === 'pre_analyzed' || e.status === 'failed');
+    });
     btn.textContent = '⏳ Sende ' + candidates.length + ' Einträge …';
     for (const e of candidates) {
       try {
@@ -2237,56 +2372,55 @@ async function loadYoutubeGallery() {
   }
 }
 
-// --- Automatik Toggle ---
-async function loadAutomatik() {
-  const toggle = document.getElementById('autoToggle');
-  const statusEl = document.getElementById('autoStatus');
+// --- Pipeline Toggle ---
+async function loadPipelines() {
   try {
     const res = await fetch('/api/config');
     const config = await res.json();
-    automatikAn = config.automatik_an === true;
-    toggle.checked = automatikAn;
-    updateAutoStatus(automatikAn);
+    pipelineWeb = config.pipeline_web === true;
+    pipelineYt = config.pipeline_youtube === true;
+    document.getElementById('plToggleWeb').checked = pipelineWeb;
+    document.getElementById('plToggleYt').checked = pipelineYt;
+    updatePlStatus('web', pipelineWeb);
+    updatePlStatus('youtube', pipelineYt);
   } catch {
-    statusEl.textContent = '⚠️';
-    statusEl.className = 'auto-status off';
+    document.getElementById('plStatusWeb').textContent = '⚠️';
+    document.getElementById('plStatusYt').textContent = '⚠️';
   }
 }
 
-function updateAutoStatus(on) {
-  const statusEl = document.getElementById('autoStatus');
-  statusEl.textContent = on ? 'AN' : 'AUS';
-  statusEl.className = 'auto-status ' + (on ? 'on' : 'off');
+function updatePlStatus(type, on) {
+  const el = document.getElementById(type === 'web' ? 'plStatusWeb' : 'plStatusYt');
+  el.textContent = on ? 'AN' : 'AUS';
+  el.className = 'pipeline-status ' + (on ? 'on' : 'off');
 }
 
-function showAutoMsg(text, type) {
-  const msg = document.getElementById('autoMsg');
-  msg.textContent = text;
-  msg.className = 'auto-msg show ' + type;
-  setTimeout(() => { msg.className = 'auto-msg'; }, 2500);
-}
-
-async function toggleAutomatik() {
-  const toggle = document.getElementById('autoToggle');
+async function togglePipeline(type) {
+  const isWeb = type === 'web';
+  const toggle = document.getElementById(isWeb ? 'plToggleWeb' : 'plToggleYt');
   const newVal = toggle.checked;
-  updateAutoStatus(newVal);
+  const key = isWeb ? 'pipeline_web' : 'pipeline_youtube';
+
+  updatePlStatus(type, newVal);
+  if (isWeb) pipelineWeb = newVal; else pipelineYt = newVal;
+
   try {
+    const body = {};
+    body[key] = newVal;
     const res = await fetch('/api/config', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ automatik_an: newVal })
+      body: JSON.stringify(body)
     });
-    if (res.ok) {
-      showAutoMsg(newVal ? '✅ Automatik aktiviert' : '⏸️ Automatik pausiert', 'success');
-    } else {
+    if (!res.ok) {
       toggle.checked = !newVal;
-      updateAutoStatus(!newVal);
-      showAutoMsg('❌ Fehler beim Umschalten', 'error');
+      updatePlStatus(type, !newVal);
+      if (isWeb) pipelineWeb = !newVal; else pipelineYt = !newVal;
     }
   } catch {
     toggle.checked = !newVal;
-    updateAutoStatus(!newVal);
-    showAutoMsg('❌ Netzwerkfehler', 'error');
+    updatePlStatus(type, !newVal);
+    if (isWeb) pipelineWeb = !newVal; else pipelineYt = !newVal;
   }
 }
 
@@ -2954,7 +3088,7 @@ async function dismissVideo(plId, vidId) {
 
 // Init
 loadStatus();
-loadAutomatik();
+loadPipelines();
 startAutoRefresh();
 </script>
 </body>

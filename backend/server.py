@@ -539,9 +539,11 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/config":
-            automatik = get_config("automatik_an", "true")
+            web_auto = get_config("pipeline_web_automatik", "false")
+            yt_auto = get_config("pipeline_youtube_automatik", "false")
             self._send_json({
-                "automatik_an": automatik == "true",
+                "pipeline_web": web_auto == "true",
+                "pipeline_youtube": yt_auto == "true",
                 "kanban_board": KANBAN_BOARD_SLUG,
             })
             return
@@ -563,7 +565,8 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/worker/status":
-            automatik = get_config("automatik_an", "true")
+            web_auto = get_config("pipeline_web_automatik", "false")
+            yt_auto = get_config("pipeline_youtube_automatik", "false")
             heartbeat = get_config("worker_last_heartbeat", None)
             last_result = get_config("worker_last_result", None)
             cards_in_queue = get_config("worker_cards_in_queue", "0")
@@ -592,7 +595,8 @@ class Handler(SimpleHTTPRequestHandler):
                 "last_heartbeat_at": heartbeat,
                 "last_result": last_result,
                 "cards_in_queue": int(cards_in_queue) if cards_in_queue else 0,
-                "automatik_an": automatik == "true",
+                "pipeline_web": web_auto == "true",
+                "pipeline_youtube": yt_auto == "true",
             })
             return
 
@@ -793,9 +797,14 @@ class Handler(SimpleHTTPRequestHandler):
                 db.close()
                 if entry_row:
                     entry_id = entry_row["id"]
+                    entry_source_type = entry_row["source_type"]
 
-                    # Automatik AN: Preanalyse + Kanban-Karte erzeugen (Cron macht den Rest)
-                    automatik = get_config("automatik_an", "true")
+                    # Pipeline-spezifischen Automatik-Toggle checken
+                    if entry_source_type == "youtube":
+                        pipeline_key = "pipeline_youtube_automatik"
+                    else:
+                        pipeline_key = "pipeline_web_automatik"
+                    automatik = get_config(pipeline_key, "false")
                     if automatik == "true":
                         threading.Thread(
                             target=_preanalyze_entry,
@@ -1306,12 +1315,19 @@ class Handler(SimpleHTTPRequestHandler):
         # PATCH /api/config — Settings ändern
         if path == "/api/config":
             body = self._read_body()
-            if "automatik_an" in body:
-                val = "true" if body["automatik_an"] else "false"
-                set_config("automatik_an", val)
-                self._send_json({"automatik_an": body["automatik_an"]})
+            updates = {}
+            if "pipeline_web" in body:
+                val = "true" if body["pipeline_web"] else "false"
+                set_config("pipeline_web_automatik", val)
+                updates["pipeline_web"] = body["pipeline_web"]
+            if "pipeline_youtube" in body:
+                val = "true" if body["pipeline_youtube"] else "false"
+                set_config("pipeline_youtube_automatik", val)
+                updates["pipeline_youtube"] = body["pipeline_youtube"]
+            if updates:
+                self._send_json(updates)
                 return
-            self._send_json({"error": "No valid fields"}, 400)
+            self._send_json({"error": "No valid fields (pipeline_web, pipeline_youtube)"}, 400)
             return
 
         # PATCH /api/entries/:id — Hermes Agent schreibt Ergebnisse zurück

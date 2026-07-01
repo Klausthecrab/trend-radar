@@ -63,6 +63,8 @@ def migrate_db():
             value TEXT NOT NULL
         );
         INSERT OR IGNORE INTO config (key, value) VALUES ('automatik_an', 'true');
+        INSERT OR IGNORE INTO config (key, value) VALUES ('pipeline_web_automatik', 'false');
+        INSERT OR IGNORE INTO config (key, value) VALUES ('pipeline_youtube_automatik', 'false');
     """)
 
     # Ensure telegram_inbox table exists (for existing DBs)
