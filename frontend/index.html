@@ -1592,6 +1592,7 @@
   .detail-action-btn.green { background: linear-gradient(135deg, var(--green), #16a34a); }
   .detail-action-btn.orange { background: linear-gradient(135deg, var(--orange), #d97706); }
   .detail-action-btn.danger { background: linear-gradient(135deg, var(--red), #dc2626); }
+  .detail-action-btn.gray { background: rgba(255,255,255,0.1); color: var(--text-dim); border: 1px solid var(--border); }
 
   @media (max-width: 768px) {
     .telegram-row {
@@ -2797,7 +2798,8 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
     const suggestedPath = entry.trilium_suggested_path || '📚 Resources (Standard)';
     footerHtml += `<div style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;color:var(--text-dim);padding:0.4rem 0;border-top:1px solid var(--border);"></div>`;
     footerHtml += `<span style="font-size:0.8rem;color:var(--text-dim);margin-right:0.5rem;">🗺️ ${escapeHtml(suggestedPath)}</span>`;
-    footerHtml += `<button onclick="triggerTrilium(${entry.id})" class="detail-action-btn green">📂 In Trilium ablegen</button>`;
+    footerHtml += `<button onclick="triggerTrilium(${entry.id})" class="detail-action-btn green" style="margin-right:0.5rem;">📂 In Trilium ablegen</button>`;
+    footerHtml += `<button onclick="rejectTrilium(${entry.id})" class="detail-action-btn gray">✖ Ablehnen</button>`;
   }
 
   // analyzed (v2 fallback - für alte Entries ohne path_suggested)
@@ -2859,11 +2861,31 @@ async function triggerTrilium(entryId) {
       setTimeout(() => { closeDetail(); loadEntries(); }, 2000);
     } else {
       btn.textContent = '❌ ' + (data.error || 'Fehler');
-      setTimeout(() => { btn.disabled = false; btn.textContent = '📂 In Trilium ablegen'; }, 5000);
+      setTimeout(() => { btn.disabled = false; btn.textContent = '📂 In Trilium ablegen'; }, 3000);
     }
   } catch (err) {
     btn.textContent = '❌ Netzwerkfehler';
     setTimeout(() => { btn.disabled = false; btn.textContent = '📂 In Trilium ablegen'; }, 3000);
+  }
+}
+
+async function rejectTrilium(entryId) {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ …';
+  try {
+    const res = await fetch(API + '/api/entries/' + entryId + '/trilium/reject', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      btn.textContent = '✖ Abgelehnt';
+      setTimeout(() => { closeDetail(); loadEntries(); }, 1500);
+    } else {
+      btn.textContent = '❌ ' + (data.error || 'Fehler');
+      setTimeout(() => { btn.disabled = false; btn.textContent = '✖ Ablehnen'; }, 3000);
+    }
+  } catch (err) {
+    btn.textContent = '❌ Netzwerkfehler';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '✖ Ablehnen'; }, 3000);
   }
 }
 

@@ -868,10 +868,90 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json({"error": "Analyse wird jetzt vom Kanban-Cron erledigt. Entry via 'Ins Kanban'-Button schicken.", "status": "deprecated"}, 410)
             return
 
-        # POST /api/entries/:id/trilium — Entfernt (Ablage macht jetzt der Kanban-Cron)
+        # POST /api/entries/:id/trilium/reject — Vorschlag ablehnen, zurück zu analyzed
+        if path.startswith("/api/entries/") and path.endswith("/trilium/reject"):
+            parts = path.split("/")
+            if len(parts) == 6:
+                entry_id = parts[3]
+                db = get_db()
+                import datetime
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                db.execute(
+                    "UPDATE entries SET status = 'analyzed', trilium_suggested_path = NULL, trilium_target_note_id = NULL WHERE id = ?",
+                    (entry_id,)
+                )
+                db.commit()
+                # Add activity log entry
+                existing = db.execute("SELECT activity_log FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                log = json.loads(existing["activity_log"]) if existing and existing["activity_log"] else []
+                log.append({"step": "rejected", "status": "done", "at": now, "message": "✖ Trilium-Vorschlag abgelehnt"})
+                db.execute("UPDATE entries SET activity_log = ? WHERE id = ?", (json.dumps(log), entry_id))
+                db.commit()
+                db.close()
+                self._send_json({"message": "Vorschlag abgelehnt", "status": "analyzed"})
+                return
+
+        # POST /api/entries/:id/trilium — In Trilium ablegen (Propose → Confirm → File)
         if path.startswith("/api/entries/") and path.endswith("/trilium"):
-            self._send_json({"error": "Trilium-Ablage wird jetzt vom Kanban-Cron erledigt. Entry muss erst analysiert werden.", "status": "deprecated"}, 410)
-            return
+            parts = path.split("/")
+            if len(parts) == 5:
+                entry_id = parts[3]
+                db = get_db()
+                row = db.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                if not row:
+                    db.close()
+                    self._send_json({"error": "Not Found"}, 404)
+                    return
+                entry = dict(row)
+
+                # Parse analysis if stored as JSON string
+                analysis = entry.get("analysis")
+                if isinstance(analysis, str):
+                    try:
+                        analysis = json.loads(analysis)
+                    except (json.JSONDecodeError, TypeError):
+                        analysis = {}
+                if not analysis:
+                    analysis = {}
+
+                target_note_id = entry.get("trilium_target_note_id")
+                if not target_note_id:
+                    db.close()
+                    self._send_json({"error": "Kein Trilium-Zielpfad vorhanden. Entry muss erst analysiert werden."}, 400)
+                    return
+
+                # Create note via trilium.py
+                from trilium import create_trilium_note
+                result = create_trilium_note(entry, analysis, target_note_id)
+
+                if result["status"] == "ok":
+                    note_id = result["note_id"]
+                    import datetime
+                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    stage_progress = json.dumps({"received": True, "transcribed": True, "analyzed": True, "path_found": True, "filed": True})
+                    db.execute(
+                        "UPDATE entries SET status = 'filed', trilium_note_id = ?, processing_step = NULL, stage_progress = ? WHERE id = ?",
+                        (note_id, stage_progress, entry_id)
+                    )
+                    db.commit()
+                    # Add activity log entry
+                    existing = db.execute("SELECT activity_log FROM entries WHERE id = ?", (entry_id,)).fetchone()
+                    log = json.loads(existing["activity_log"]) if existing and existing["activity_log"] else []
+                    log.append({"step": "filed", "status": "done", "at": now, "message": f"✅ In Trilium abgelegt: {result.get('path', '📚 Resources')}"})
+                    db.execute("UPDATE entries SET activity_log = ? WHERE id = ?", (json.dumps(log), entry_id))
+                    db.commit()
+                    db.close()
+
+                    self._send_json({
+                        "status": "filed",
+                        "trilium_note_id": note_id,
+                        "trilium_path": result.get("path", "📚 Resources"),
+                        "message": f"✅ Abgelegt unter: {result.get('path', '📚 Resources')}",
+                    })
+                else:
+                    db.close()
+                    self._send_json({"error": result.get("error", "Fehler beim Anlegen der Trilium-Note")}, 500)
+                return
 
         # --- Playlist API (POST) ---
 
