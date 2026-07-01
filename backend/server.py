@@ -11,7 +11,7 @@ import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, get_config, set_config, init_stage_progress, DB_PATH
+from database import get_db, init_db, seed_dummy_data, migrate_db, set_processing_step, get_config, set_config, init_stage_progress, init_activity_log, DB_PATH
 
 # Kanban board configuration
 KANBAN_BOARD_SLUG = "trend-radar"
@@ -620,6 +620,11 @@ class Handler(SimpleHTTPRequestHandler):
                             entry["stage_progress"] = json.loads(entry["stage_progress"])
                         except (json.JSONDecodeError, TypeError):
                             pass
+                    if entry.get("activity_log"):
+                        try:
+                            entry["activity_log"] = json.loads(entry["activity_log"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
                     self._send_json(entry)
                 else:
                     self._send_json({"error": "Not Found"}, 404)
@@ -657,6 +662,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if e.get("stage_progress"):
                     try:
                         e["stage_progress"] = json.loads(e["stage_progress"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if e.get("activity_log"):
+                    try:
+                        e["activity_log"] = json.loads(e["activity_log"])
                     except (json.JSONDecodeError, TypeError):
                         pass
             db.close()
@@ -785,12 +795,15 @@ class Handler(SimpleHTTPRequestHandler):
                 source_type = _detect_source_type(url)
 
             title = body.get("title", "").strip()
+            input_channel = body.get("input_channel", "dump").strip()
+            if input_channel not in ("dump", "extension", "telegram", "playlist"):
+                input_channel = "dump"
 
             db = get_db()
             try:
                 db.execute(
-                    "INSERT OR IGNORE INTO entries (source_type, url, title, status, stage_progress) VALUES (?, ?, ?, 'new', ?)",
-                    (source_type, url, title, init_stage_progress(source_type))
+                    "INSERT OR IGNORE INTO entries (source_type, url, title, status, stage_progress, input_channel, activity_log) VALUES (?, ?, ?, 'new', ?, ?, ?)",
+                    (source_type, url, title, init_stage_progress(source_type), input_channel, init_activity_log(source_type, input_channel))
                 )
                 db.commit()
                 entry_row = db.execute("SELECT id, source_type FROM entries WHERE url = ?", (url,)).fetchone()
@@ -1021,8 +1034,8 @@ class Handler(SimpleHTTPRequestHandler):
                 published = vid.get("published_at", "")
                 db.execute(
                     """INSERT INTO entries (source_type, url, title, author, thumbnail_url,
-                       published_at, status) VALUES ('youtube', ?, ?, ?, ?, ?, 'new')""",
-                    (yt_url, title, channel, thumb, published)
+                       published_at, status, input_channel, activity_log) VALUES ('youtube', ?, ?, ?, ?, ?, 'new', 'playlist', ?)""",
+                    (yt_url, title, channel, thumb, published, init_activity_log("youtube", "playlist"))
                 )
                 db.commit()
                 entry_row = db.execute("SELECT id FROM entries WHERE url = ?", (yt_url,)).fetchone()
@@ -1082,8 +1095,8 @@ class Handler(SimpleHTTPRequestHandler):
                     continue
                 db.execute(
                     """INSERT INTO entries (source_type, url, title, author, thumbnail_url,
-                       published_at, status) VALUES ('youtube', ?, ?, ?, ?, ?, 'new')""",
-                    (yt_url, vid.get("title",""), vid.get("channel",""), vid.get("thumbnail_url",""), vid.get("published_at",""))
+                       published_at, status, input_channel, activity_log) VALUES ('youtube', ?, ?, ?, ?, ?, 'new', 'playlist', ?)""",
+                    (yt_url, vid.get("title",""), vid.get("channel",""), vid.get("thumbnail_url",""), vid.get("published_at",""), init_activity_log("youtube", "playlist"))
                 )
                 db.commit()
                 erow = db.execute("SELECT id FROM entries WHERE url = ?", (yt_url,)).fetchone()
@@ -1180,8 +1193,8 @@ class Handler(SimpleHTTPRequestHandler):
                 source_type = _detect_source_type(url)
                 title = inbox_item.get("title", "")
                 db.execute(
-                    "INSERT INTO entries (source_type, url, title, status) VALUES (?, ?, ?, 'new')",
-                    (source_type, url, title)
+                    "INSERT INTO entries (source_type, url, title, status, input_channel, activity_log) VALUES (?, ?, ?, 'new', 'telegram', ?)",
+                    (source_type, url, title, init_activity_log(source_type, "telegram"))
                 )
                 db.commit()
                 entry_row = db.execute("SELECT id FROM entries WHERE url = ?", (url,)).fetchone()
@@ -1248,8 +1261,8 @@ class Handler(SimpleHTTPRequestHandler):
                 source_type = _detect_source_type(url)
                 title = inbox_item.get("title", "")
                 db.execute(
-                    "INSERT INTO entries (source_type, url, title, status) VALUES (?, ?, ?, 'new')",
-                    (source_type, url, title)
+                    "INSERT INTO entries (source_type, url, title, status, input_channel, activity_log) VALUES (?, ?, ?, 'new', 'telegram', ?)",
+                    (source_type, url, title, init_activity_log(source_type, "telegram"))
                 )
                 db.commit()
                 entry_row = db.execute("SELECT id FROM entries WHERE url = ?", (url,)).fetchone()
@@ -1346,7 +1359,8 @@ class Handler(SimpleHTTPRequestHandler):
                 updates = []
                 args = []
                 for field in ("status", "content", "analysis", "trilium_suggested_path",
-                              "trilium_note_id", "trilium_target_note_id", "stage_progress"):
+                              "trilium_note_id", "trilium_target_note_id", "stage_progress",
+                              "activity_log"):
                     if field in body:
                         val = body[field]
                         # stage_progress: merge instead of overwrite
@@ -1361,10 +1375,49 @@ class Handler(SimpleHTTPRequestHandler):
                                 merged = {}
                             merged.update(val)
                             val = json.dumps(merged)
+                        elif field == "activity_log" and isinstance(val, list):
+                            # Merge with existing activity_log (append new entries)
+                            existing_log = row["activity_log"]
+                            try:
+                                merged_log = json.loads(existing_log) if existing_log else []
+                            except (json.JSONDecodeError, TypeError):
+                                merged_log = []
+                            merged_log.extend(val)
+                            val = json.dumps(merged_log)
                         elif isinstance(val, (dict, list)):
                             val = json.dumps(val)
                         updates.append(f"{field} = ?")
                         args.append(val)
+
+                # Auto-log status changes
+                if "status" in body and body["status"] != row["status"]:
+                    import datetime
+                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    new_status = body["status"]
+                    status_messages = {
+                        "transcribing": "🎤 Transkription gestartet",
+                        "transcribed": "🎤 Transkription abgeschlossen",
+                        "analyzing": "🔎 LLM-Analyse gestartet",
+                        "analyzed": "🔎 LLM-Analyse abgeschlossen",
+                        "path_suggested": "🏷️ Trilium-Pfad vorgeschlagen",
+                        "filed": "✅ In Trilium abgelegt",
+                        "failed": "❌ Fehlgeschlagen",
+                    }
+                    log_entry = {
+                        "step": new_status,
+                        "status": "failed" if new_status == "failed" else "done",
+                        "at": now,
+                        "message": status_messages.get(new_status, f"Status: {new_status}"),
+                    }
+                    # Read existing log, append
+                    existing_log = row["activity_log"]
+                    try:
+                        merged_log = json.loads(existing_log) if existing_log else []
+                    except (json.JSONDecodeError, TypeError):
+                        merged_log = []
+                    merged_log.append(log_entry)
+                    updates.append("activity_log = ?")
+                    args.append(json.dumps(merged_log))
                 if updates:
                     updates.append("processing_step = NULL")
                     args.append(entry_id)
@@ -1388,6 +1441,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if entry.get("stage_progress"):
                     try:
                         entry["stage_progress"] = json.loads(entry["stage_progress"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if entry.get("activity_log"):
+                    try:
+                        entry["activity_log"] = json.loads(entry["activity_log"])
                     except (json.JSONDecodeError, TypeError):
                         pass
                 self._send_json(entry)

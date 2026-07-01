@@ -51,6 +51,8 @@ def migrate_db():
         ("trilium_suggested_path", "TEXT"),
         ("trilium_target_note_id", "TEXT"),
         ("trilium_note_id", "TEXT"),
+        ("input_channel", "TEXT DEFAULT 'dump'"),
+        ("activity_log", "TEXT"),
     ]:
         if col not in existing:
             conn.execute(f"ALTER TABLE entries ADD COLUMN {col} {col_type}")
@@ -295,6 +297,22 @@ def set_config(key: str, value: str):
         db.commit()
     finally:
         db.close()
+
+
+def init_activity_log(source_type: str, input_channel: str = "dump") -> str:
+    """Return JSON for initial activity_log with received step."""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    step_label = "Empfangen"
+    channel_labels = {"dump": "📥 Dump", "extension": "🧩 Browser-Extension", "telegram": "📨 Telegram", "playlist": "📋 Playlist"}
+    channel_label = channel_labels.get(input_channel, input_channel)
+    if source_type == "youtube":
+        return json.dumps([
+            {"step": "received", "status": "done", "at": now, "message": f"{channel_label} — YouTube-Video empfangen"}
+        ])
+    return json.dumps([
+        {"step": "received", "status": "done", "at": now, "message": f"{channel_label} — Link empfangen"}
+    ])
 
 
 def init_stage_progress(source_type: str) -> str:

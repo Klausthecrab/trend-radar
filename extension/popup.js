@@ -100,6 +100,8 @@ async function sendAllTabs() {
         body: JSON.stringify({
           url: tab.url,
           title: tab.title || '',
+          comment: comment,
+          input_channel: 'extension',
           source_type: tab.url.includes('youtube.com') || tab.url.includes('youtu.be')
             ? 'youtube'
             : 'web',

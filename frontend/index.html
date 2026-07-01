@@ -1442,6 +1442,133 @@
   .t-badge.dismissed { background: rgba(100,100,100,0.2); color: var(--text-dim); }
   .t-badge.filed { background: rgba(34,197,94,0.2); color: var(--green); }
 
+  /* ===== Detail Modal: Source Info ===== */
+  .detail-source {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .detail-source-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    padding: 0.2rem 0;
+    min-width: 0;
+  }
+  .detail-source-row .ds-label {
+    color: var(--text-dim);
+    font-weight: 600;
+    min-width: 2rem;
+    flex-shrink: 0;
+  }
+  .detail-source-row .ds-value {
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detail-source-row .ds-value a {
+    color: var(--cyan);
+    text-decoration: none;
+  }
+  .detail-source-row .ds-value a:hover { text-decoration: underline; }
+  .ds-channel-badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .ds-channel-badge.dump { background: rgba(124,58,237,0.15); color: var(--accent); }
+  .ds-channel-badge.extension { background: rgba(6,182,212,0.15); color: var(--cyan); }
+  .ds-channel-badge.telegram { background: rgba(34,197,94,0.15); color: var(--green); }
+  .ds-channel-badge.playlist { background: rgba(245,158,11,0.15); color: var(--orange); }
+
+  /* ===== Detail Modal: Activity Log ===== */
+  .activity-log {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .activity-log h3 {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    margin-bottom: 0.6rem;
+  }
+  .al-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .al-item {
+    display: flex;
+    gap: 0.7rem;
+    padding: 0.4rem 0;
+    position: relative;
+  }
+  .al-item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 0.65rem;
+    top: 1.6rem;
+    bottom: -0.2rem;
+    width: 2px;
+    background: var(--border);
+  }
+  .al-icon {
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    z-index: 1;
+  }
+  .al-icon.done { background: rgba(34,197,94,0.15); color: var(--green); }
+  .al-icon.failed { background: rgba(239,68,68,0.15); color: var(--red); }
+  .al-icon.pending { background: rgba(100,100,100,0.15); color: var(--text-dim); }
+  .al-content { min-width: 0; flex: 1; }
+  .al-message {
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+  .al-message.failed { color: var(--red); }
+  .al-time {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 0.1rem;
+  }
+
+  /* ===== Detail Modal: Contextual Buttons ===== */
+  .detail-action-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: opacity 0.2s;
+  }
+  .detail-action-btn:hover { opacity: 0.9; }
+  .detail-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .detail-action-btn.primary { background: linear-gradient(135deg, var(--accent), #6d28d9); }
+  .detail-action-btn.cyan { background: linear-gradient(135deg, var(--cyan), #0891b2); }
+  .detail-action-btn.green { background: linear-gradient(135deg, var(--green), #16a34a); }
+  .detail-action-btn.orange { background: linear-gradient(135deg, var(--orange), #d97706); }
+  .detail-action-btn.danger { background: linear-gradient(135deg, var(--red), #dc2626); }
+
   @media (max-width: 768px) {
     .telegram-row {
       grid-template-columns: 24px 1fr;
@@ -2289,7 +2416,7 @@ async function submitDump() {
       const res = await fetch(API + '/api/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, source_type: type || undefined, title: title || undefined })
+        body: JSON.stringify({ url, source_type: type || undefined, title: title || undefined, input_channel: 'dump' })
       });
       const data = await res.json();
 
@@ -2502,9 +2629,44 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
   }
   metaHtml += '</div>';
 
-  // Stage Progress
   let bodyHtml = metaHtml;
   bodyHtml += renderStageProgress(entry.stage_progress, entry.source_type, entry.status);
+
+  // ─── Source Info Block ────────────────────────────
+  const channelLabels = { dump: '📥 Dump', extension: '🧩 Extension', telegram: '📨 Telegram', playlist: '📋 Playlist' };
+  const channelLabel = channelLabels[entry.input_channel] || entry.input_channel || '📥 Dump';
+  const createdDate = entry.created_at ? new Date(entry.created_at).toLocaleString('de-DE') : '—';
+  bodyHtml += `<div class="detail-source">
+    <div class="detail-source-row">
+      <span class="ds-label">📥</span>
+      <span class="ds-channel-badge ${entry.input_channel || 'dump'}">${channelLabel}</span>
+      <span class="ds-value" style="color:var(--text-dim);font-size:0.78rem;">${createdDate}</span>
+    </div>`;
+  if (entry.url) {
+    bodyHtml += `<div class="detail-source-row">
+      <span class="ds-label">🔗</span>
+      <span class="ds-value"><a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener">${escapeHtml(entry.url)}</a></span>
+    </div>`;
+  }
+  bodyHtml += '</div>';
+
+  // ─── Activity Log ────────────────────────────
+  if (entry.activity_log && entry.activity_log.length) {
+    bodyHtml += '<div class="activity-log"><h3>📋 Aktivitäts-Log</h3><div class="al-timeline">';
+    entry.activity_log.forEach(log => {
+      const statusClass = log.status === 'failed' ? 'failed' : (log.status === 'done' ? 'done' : 'pending');
+      const icon = log.status === 'failed' ? '❌' : (log.status === 'done' ? '✅' : '⏳');
+      const time = log.at ? new Date(log.at).toLocaleString('de-DE') : '';
+      bodyHtml += `<div class="al-item">
+        <div class="al-icon ${statusClass}">${icon}</div>
+        <div class="al-content">
+          <div class="al-message ${statusClass}">${escapeHtml(log.message || log.step || '—')}</div>
+          <div class="al-time">${time}</div>
+        </div>
+      </div>`;
+    });
+    bodyHtml += '</div></div>';
+  }
 
   // Full content / transcript
   if (entry.content) {
@@ -2558,42 +2720,55 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
 
   bodyEl.innerHTML = bodyHtml;
 
-  // Footer: links + actions
+  // ─── Footer: Contextual Action Buttons ─────────────
   let footerHtml = '';
+
+  // Original-Link (immer anzeigen)
   if (entry.url) {
     footerHtml += `<a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener">🔗 Original-Link</a>`;
   }
-  if (entry.obsidian_note_path) {
-    footerHtml += `<a href="obsidian://open?vault=osb&file=${encodeURIComponent(entry.obsidian_note_path)}" target="_blank">📝 Obsidian-Note</a>`;
+
+  // Contextual Buttons based on status
+  const s = entry.status;
+
+  // new/pre_analyzed: "Ins Kanban" (nur bei Automatik AUS)
+  if ((s === 'new' || s === 'pre_analyzed') && !automatikAn) {
+    footerHtml += `<button onclick="sendToKanbanModal(${entry.id})" class="detail-action-btn primary">📤 Ins Kanban</button>`;
   }
-  
-  // Kanban-Button (primary action für new/pre_analyzed/failed)
-  if (entry.status === 'new' || entry.status === 'pre_analyzed' || entry.status === 'failed') {
-    footerHtml += `<button onclick="sendToKanbanModal(${entry.id})" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--accent),#6d28d9);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">📤 Ins Kanban</button>`;
+
+  // failed: "Erneut versuchen" statt "Ins Kanban"
+  if (s === 'failed') {
+    const btnText = entry.analysis && (entry.analysis.summary || entry.analysis.topics)
+      ? '🔄 Erneut versuchen (hat Analyse-Daten)'
+      : '🔄 Erneut versuchen';
+    footerHtml += `<button onclick="sendToKanbanModal(${entry.id})" class="detail-action-btn orange">${btnText}</button>`;
   }
-  
-  // Analyse-Button (v2.1 fallback für new/pre_analyzed)
-  if (entry.status === 'new' || entry.status === 'pre_analyzed') {
-    footerHtml += `<button onclick="triggerAnalyze(${entry.id})" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--cyan),#0891b2);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">🔍 Analysieren (v2)</button>`;
-  }
-  
-  // Trilium-Ablege-Button (für analyzed)
-  if (entry.status === 'analyzed') {
+
+  // path_suggested: Trilium bestätigen
+  if (s === 'path_suggested') {
     const suggestedPath = entry.trilium_suggested_path || '📚 Resources (Standard)';
     footerHtml += `<div style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;color:var(--text-dim);padding:0.4rem 0;border-top:1px solid var(--border);"></div>`;
     footerHtml += `<span style="font-size:0.8rem;color:var(--text-dim);margin-right:0.5rem;">🗺️ ${escapeHtml(suggestedPath)}</span>`;
-    footerHtml += `<button onclick="triggerTrilium(${entry.id})" style="padding:0.5rem 1rem;background:linear-gradient(135deg,var(--green),#16a34a);border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;font-size:0.85rem;">📂 In Trilium ablegen</button>`;
+    footerHtml += `<button onclick="triggerTrilium(${entry.id})" class="detail-action-btn green">📂 In Trilium ablegen</button>`;
   }
-  
-  // Filed-Status
-  if (entry.status === 'filed') {
+
+  // analyzed (v2 fallback - für alte Entries ohne path_suggested)
+  if (s === 'analyzed') {
+    const suggestedPath = entry.trilium_suggested_path || '📚 Resources (Standard)';
+    footerHtml += `<div style="width:100%;margin-bottom:0.5rem;font-size:0.8rem;color:var(--text-dim);padding:0.4rem 0;border-top:1px solid var(--border);"></div>`;
+    footerHtml += `<span style="font-size:0.8rem;color:var(--text-dim);margin-right:0.5rem;">🗺️ ${escapeHtml(suggestedPath)}</span>`;
+    footerHtml += `<button onclick="triggerTrilium(${entry.id})" class="detail-action-btn green">📂 In Trilium ablegen</button>`;
+  }
+
+  // filed: abgelegt-info
+  if (s === 'filed') {
     const triliumPath = entry.trilium_suggested_path || '📚 Resources';
     footerHtml += `<span style="font-size:0.85rem;color:var(--green);padding:0.4rem 0;display:block;width:100%;border-top:1px solid var(--border);margin-top:0.5rem;padding-top:0.5rem;">✅ Abgelegt unter: ${escapeHtml(triliumPath)}</span>`;
     if (entry.trilium_note_id) {
       footerHtml += `<a href="http://localhost:18080/#root/${entry.trilium_note_id}" target="_blank" rel="noopener" style="font-size:0.85rem;color:var(--cyan);">📂 In Trilium öffnen</a>`;
     }
   }
-  
+
   footerEl.innerHTML = footerHtml;
 }
 
