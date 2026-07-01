@@ -1,9 +1,6 @@
 // ─── Trend Radar Browser Extension — Popup ─────────────
-// Issue #29: Grundgerüst (Tabs anzeigen, Button deaktiviert)
-// Issue #30: Send-Logik (Tabs schließen + POST)
-//
-// Die #30-Funktionen sind vorbereitet aber noch nicht aktiv.
-// Kommentar // #30 markiert Stellen, die in #30 aktiviert werden.
+// Issue #29: Grundgerüst (Tabs anzeigen, Button deaktiviert) ✅
+// Issue #30: Send-Logik (Tabs schließen + POST) ✅ aktiv
 
 const API_BASE = 'http://localhost:9126';
 
@@ -24,9 +21,8 @@ function renderTabs(tabs) {
     return;
   }
 
-  // Button: deaktiviert in #29, aktiv in #30
-  // #30: sendBtn.disabled = false;
-  sendBtn.disabled = true;
+  // Button aktivieren
+  sendBtn.disabled = false;
 
   list.innerHTML = tabs.map((tab, i) => {
     const urlDisplay = tab.url.length > 65
@@ -157,7 +153,6 @@ async function sendAllTabs() {
 document.addEventListener('DOMContentLoaded', () => {
   loadTabs();
 
-  // #29: Button bleibt deaktiviert (disabled = true in renderTabs gesetzt)
-  // #30: Diese Zeile einkommentieren:
-  // document.getElementById('sendBtn').addEventListener('click', sendAllTabs);
+  // Senden-Button aktivieren
+  document.getElementById('sendBtn').addEventListener('click', sendAllTabs);
 });
