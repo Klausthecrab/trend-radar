@@ -2096,9 +2096,11 @@ async function loadEntries() {
           <div class="card-footer-right">
             ${(() => {
               const entryPipeline = e.source_type === 'youtube' ? pipelineYt : pipelineWeb;
-              return !entryPipeline && (entryStatus === 'new' || entryStatus === 'pre_analyzed' || entryStatus === 'failed')
-                ? '<button class="kanban-btn" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">📤 Ins Kanban</button>'
-                : '';
+              if (!entryPipeline && (entryStatus === 'new' || entryStatus === 'pre_analyzed'))
+                return '<button class="kanban-btn" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">📤 Ins Kanban</button>';
+              if (!entryPipeline && entryStatus === 'failed')
+                return '<button class="kanban-btn" onclick="event.stopPropagation();sendToKanban(' + e.id + ', this)">🔄 Erneut versuchen</button>';
+              return '';
             })()}
           </div>
         </div>
@@ -2120,10 +2122,10 @@ async function loadEntries() {
       startAutoRefresh();
     }
 
-    // Bulk-Kanban-Button anzeigen wenn Pipeline AUS + neue/pre_analyzed/failed Einträge existieren
+    // Bulk-Kanban-Button anzeigen wenn Pipeline AUS + neue/pre_analyzed Einträge existieren
     const hasNewOrFailed = entries.some(e => {
       const pl = e.source_type === 'youtube' ? pipelineYt : pipelineWeb;
-      return !pl && (e.status === 'new' || e.status === 'pre_analyzed' || e.status === 'failed');
+      return !pl && (e.status === 'new' || e.status === 'pre_analyzed');
     });
     const bulkBtn = document.getElementById('bulkKanbanBtn');
     if (hasNewOrFailed) {
@@ -2730,14 +2732,15 @@ function renderDetailModal(entry, titleEl, bodyEl, footerEl) {
 
   // Contextual Buttons based on status
   const s = entry.status;
+  const entryPipeline = entry.source_type === 'youtube' ? pipelineYt : pipelineWeb;
 
   // new/pre_analyzed: "Ins Kanban" (nur bei Automatik AUS)
-  if ((s === 'new' || s === 'pre_analyzed') && !automatikAn) {
+  if ((s === 'new' || s === 'pre_analyzed') && !entryPipeline) {
     footerHtml += `<button onclick="sendToKanbanModal(${entry.id})" class="detail-action-btn primary">📤 Ins Kanban</button>`;
   }
 
-  // failed: "Erneut versuchen" statt "Ins Kanban"
-  if (s === 'failed') {
+  // failed: "Erneut versuchen" statt "Ins Kanban" (nur bei Automatik AUS)
+  if (s === 'failed' && !entryPipeline) {
     const btnText = entry.analysis && (entry.analysis.summary || entry.analysis.topics)
       ? '🔄 Erneut versuchen (hat Analyse-Daten)'
       : '🔄 Erneut versuchen';
